@@ -41,8 +41,11 @@ Antes de afirmar qualquer anterioridade, execute busca nas bases disponíveis no
   docstring da ferramenta documenta a sintaxe errada. Query sem sufixo de campo **não
   filtra** e devolve as concessões mais recentes com aparência de sucesso.
   **Leia `references/busca-ppubs-brs.md` antes da primeira busca.**
-- **BR, CN, EP e +100 jurisdições** — EPO OPS (INPADOC/DOCDB). Se a pergunta envolve
-  Brasil ou China e só o PPUBS respondeu, a busca está incompleta.
+- **BR, CN, EP e +100 jurisdições** — EPO OPS (INPADOC/DOCDB), sintaxe **CQL** (`ti=`,
+  `ipc=`, `pa=`) — **não** BRS. Misturar as duas não dá erro, dá resultado errado. Se a
+  pergunta envolve Brasil ou China e só o PPUBS respondeu, a busca está incompleta.
+  Membros de uma mesma família INPADOC são a **mesma** invenção: contam como um
+  documento no confronto de novidade, não como vários.
 - **Despachos e prazos BR** — base local da RPI. Nunca deduza prazo por analogia entre
   despachos; código ausente da tabela revisada retorna `PRAZO DESCONHECIDO`.
 

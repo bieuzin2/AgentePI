@@ -1,4 +1,9 @@
-# Sintaxe de busca — USPTO Patent Public Search (BRS)
+# Sintaxe de busca — USPTO (BRS) e EPO OPS (CQL)
+
+Duas bases, duas linguagens de consulta incompatíveis. A parte do USPTO vem primeiro
+porque é onde a ferramenta documenta a sintaxe errada; a do EPO está no fim do arquivo.
+
+## USPTO Patent Public Search (BRS)
 
 > ⚠️ **A docstring da ferramenta `ppubs_search_patents` está errada.** Ela documenta
 > sintaxe de **prefixo** (`TTL/`, `IN/`, `AN/`, `CPC/`). O PPUBS usa BRS de **sufixo**.
@@ -82,3 +87,37 @@ integral para o confronto elemento a elemento.
 O PPUBS é só US (USPAT, US-PGPUB, USOCR). Brasil, China, Europa e o resto do mundo
 entram pelo EPO OPS (INPADOC/DOCDB), não por aqui. Se a pergunta é sobre BR ou CN e
 só o PPUBS respondeu, **a busca está incompleta — diga isso**.
+
+---
+
+# EPO OPS — sintaxe CQL (não é BRS)
+
+> ⚠️ **As duas sintaxes não se misturam.** Mandar BRS de sufixo (`.ti.`) para o EPO ou
+> CQL (`ti=`) para o PPUBS não dá erro claro — dá resultado errado. Confira em qual
+> ferramenta você está antes de escrever a query.
+
+| CQL (EPO) | Campo | BRS equivalente (PPUBS) |
+| :--- | :--- | :--- |
+| `ti="biodegradable packaging"` | título | `("biodegradable packaging").ti.` |
+| `ab=biodegradable` | resumo | `(biodegradable).ab.` |
+| `ta=...` | título **ou** resumo | — |
+| `pa="Braskem"` | titular | `("Braskem").as.` |
+| `in="Silva"` | inventor | `("Silva").in.` |
+| `ipc=/low B65D65/46` | IPC | `(B65D65/46).ipc.` |
+| `pn=BR102019000000` | nº publicação | `("...").pn.` |
+| `pd within "2020 2026"` | janela de data | `(@pd>="20200101").pd.` |
+
+Operadores: `and`, `or`, `not`. Teto duro de **2000 resultados por consulta** — pedir
+além disso retorna erro explícito, e se o total casado passar de 2000 a resposta traz
+um aviso de que os resultados são amostra, não acervo.
+
+## Duas armadilhas do EPO
+
+1. **Texto integral quase não existe fora de EP e WO.** `epo_texto_integral` costuma vir
+   vazio para BR, US e CN. Vazio aqui significa *"o EPO não tem o texto"*, **não** *"o
+   documento não revela o elemento"*. É proibido marcar `NÃO LOCALIZADO` com base nisso —
+   busque o texto na base nacional antes.
+2. **Membros da mesma família INPADOC são a mesma invenção.** BR, US e CN do mesmo
+   depósito contam como **um** documento no confronto de novidade, nunca como três
+   anterioridades independentes. Use `epo_familia_inpadoc` para agrupar antes de montar
+   o quadro.

@@ -7,6 +7,12 @@
       "env": {
         "LOG_LEVEL": "INFO"
       }
+    },
+    "epo": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["epo\\epo_mcp.py"],
+      "env": {}
     }
   }
 }
