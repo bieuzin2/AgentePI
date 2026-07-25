@@ -1,0 +1,51 @@
+{
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": [
+      "mcp__uspto__ppubs_search_patents",
+      "mcp__uspto__ppubs_search_applications",
+      "mcp__uspto__ppubs_get_patent_by_number",
+      "mcp__uspto__ppubs_get_full_document",
+      "mcp__uspto__odp_get_application",
+      "mcp__uspto__odp_get_application_metadata",
+      "mcp__uspto__odp_get_continuity",
+      "mcp__uspto__odp_get_transactions",
+      "mcp__uspto__odp_search_applications",
+      "mcp__uspto__ptab_search_proceedings",
+      "mcp__uspto__ptab_search_decisions",
+      "mcp__uspto__ptab_get_decision",
+      "WebSearch",
+      "WebFetch(domain:revistas.inpi.gov.br)",
+      "WebFetch(domain:www.gov.br)",
+      "WebFetch(domain:dados.gov.br)",
+      "WebFetch(domain:worldwide.espacenet.com)",
+      "WebFetch(domain:ppubs.uspto.gov)",
+      "WebFetch(domain:api.lens.org)",
+      "Bash(git *)",
+      "PowerShell(git *)"
+    ],
+    "deny": [
+      "mcp__uspto__patentsview_search_patents",
+      "mcp__uspto__patentsview_get_patent",
+      "mcp__uspto__patentsview_search_assignees",
+      "mcp__uspto__patentsview_get_assignee",
+      "mcp__uspto__patentsview_search_inventors",
+      "mcp__uspto__patentsview_get_inventor",
+      "mcp__uspto__patentsview_get_claims",
+      "mcp__uspto__patentsview_get_description",
+      "mcp__uspto__patentsview_search_by_cpc",
+      "mcp__uspto__patentsview_lookup_cpc",
+      "mcp__uspto__patentsview_search_by_ipc",
+      "mcp__uspto__patentsview_lookup_ipc",
+      "mcp__uspto__patentsview_search_attorneys",
+      "mcp__uspto__patentsview_get_attorney",
+      "mcp__uspto__tsdr_get_trademark_status",
+      "mcp__uspto__tsdr_list_trademark_documents",
+      "mcp__uspto__tsdr_download_trademark_documents",
+      "mcp__uspto__tsdr_get_trademark_image",
+      "mcp__uspto__tm_search_trademarks",
+      "mcp__uspto__tm_get_trademark",
+      "mcp__uspto__tm_search_assignments"
+    ]
+  }
+}

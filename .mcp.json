@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "uspto": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\patent-mcp-server.exe",
+      "args": [],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
