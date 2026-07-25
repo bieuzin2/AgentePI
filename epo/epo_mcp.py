@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,42 @@ def _ref(doc_id: Any) -> str:
     return ""
 
 
+# IPC no EPO vem em largura fixa do padrao WIPO:
+# "B65D  65/    46            A I"  ->  "B65D65/46"
+_RE_IPC = re.compile(r"([A-H])\s*(\d{1,2})\s*([A-Z])\s*(\d+)\s*/\s*(\d+)")
+
+
+def _normaliza_ipc(bruto: str) -> str:
+    m = _RE_IPC.search(bruto or "")
+    if not m:
+        return (bruto or "").strip()
+    sec, cls, sub, grupo, subgrupo = m.groups()
+    return f"{sec}{cls.zfill(2)}{sub}{grupo}/{subgrupo}"
+
+
+def _partes(bloco: dict, papel: str) -> list[str]:
+    """Extrai nomes de applicants/inventors.
+
+    Duas armadilhas do EPO: (1) o nome fica em '<papel>-name'.'name', um nivel
+    mais fundo do que parece; (2) cada parte aparece DUAS vezes, uma com
+    @data-format='epodoc' (normalizado, com sufixo '[BR]') e outra 'original'
+    (como foi depositado). Preferimos 'original' -- e o nome que o analista
+    reconhece e o que casa com busca por titular.
+    """
+    itens = _lista(bloco.get(papel, {}).get(f"{papel[:-1]}"))
+    por_formato: dict[str, list[str]] = {"original": [], "epodoc": []}
+    for p in itens:
+        if not isinstance(p, dict):
+            continue
+        nome = _texto(p.get(f"{papel[:-1]}-name", {}).get("name"))
+        if not nome:
+            continue
+        fmt = p.get("@data-format", "epodoc")
+        por_formato.setdefault(fmt, []).append(nome)
+    escolhidos = por_formato.get("original") or por_formato.get("epodoc") or []
+    return list(dict.fromkeys(escolhidos))
+
+
 def _resumo_documento(ex: dict) -> dict:
     """Extrai so os campos de triagem de um exchange-document.
 
@@ -106,27 +143,25 @@ def _resumo_documento(ex: dict) -> dict:
     classificacao. O texto integral vem depois, por documento, sob demanda.
     """
     bib = ex.get("bibliographic-data", {}) if isinstance(ex, dict) else {}
-    partes = bib.get("publication-reference", {}).get("document-id")
+    doc_id = bib.get("publication-reference", {}).get("document-id")
 
     titulos = {
         _texto(t.get("@lang")) or "??": _texto(t)
         for t in _lista(bib.get("invention-title"))
         if isinstance(t, dict)
     }
-    titulares = [
-        _texto(p.get("name"))
-        for p in _lista(bib.get("parties", {}).get("applicants", {}).get("applicant"))
-        if isinstance(p, dict)
-    ]
+    bloco_partes = bib.get("parties") if isinstance(bib.get("parties"), dict) else {}
+    titulares = _partes(bloco_partes, "applicants")
+    inventores = _partes(bloco_partes, "inventors")
     ipc = [
-        _texto(c.get("text"))
+        _normaliza_ipc(_texto(c.get("text")))
         for c in _lista(
             bib.get("classifications-ipcr", {}).get("classification-ipcr")
         )
         if isinstance(c, dict)
     ]
     return {
-        "referencia": _ref(partes),
+        "referencia": _ref(doc_id),
         "pais": _texto(ex.get("@country")),
         "titulo": titulos.get("en") or (next(iter(titulos.values()), "")),
         "titulos_por_idioma": titulos,
@@ -134,28 +169,48 @@ def _resumo_documento(ex: dict) -> dict:
             next(
                 (
                     d.get("date")
-                    for d in _lista(partes)
+                    for d in _lista(doc_id)
                     if isinstance(d, dict) and d.get("date")
                 ),
                 None,
             )
         ),
-        "titulares": [t for t in dict.fromkeys(titulares) if t],
+        "titulares": titulares,
+        "inventores": inventores,
         "ipc": [c for c in dict.fromkeys(ipc) if c],
     }
 
 
-def _entrada(referencia: str, formato: str):
-    """Epodoc ('BR102019000000A2') ou Docdb ('BR.102019000000.A2')."""
-    if formato == "docdb":
-        partes = referencia.split(".")
-        if len(partes) != 3:
-            raise ValueError(
-                "formato docdb exige 'PAIS.NUMERO.TIPO' (ex.: 'BR.102019000000.A2')"
-            )
-        pais, numero, tipo = partes
-        return epo_ops.models.Docdb(numero, pais, tipo)
-    return epo_ops.models.Epodoc(referencia)
+_RE_REF = re.compile(r"^([A-Z]{2})[-. ]?(\d+)[-. ]?([A-Z]\d?)?$", re.IGNORECASE)
+
+
+def _entrada(referencia: str):
+    """Converte qualquer forma usual de referencia no input que a API aceita.
+
+    Aceita 'BR-102022010731-A2' (que e o que epo_busca devolve), 'BR102022010731A2',
+    'BR102022010731' e 'BR.102022010731.A2'.
+
+    Detalhe que custa 404 se ignorado: o formato **epodoc nao aceita kind code**.
+    'BR102022010731A2' devolve 404; 'BR102022010731' devolve 200. Docdb aceita o kind
+    e e inequivoco, entao e o preferido sempre que o kind for conhecido.
+    """
+    ref = (referencia or "").strip().upper()
+    m = _RE_REF.match(ref)
+    if not m:
+        raise ValueError(
+            f"Referencia '{referencia}' nao reconhecida. Use algo como "
+            "'BR-102022010731-A2', 'BR102022010731' ou 'EP1000000'."
+        )
+    pais, numero, kind = m.group(1), m.group(2), m.group(3)
+    if kind:
+        return epo_ops.models.Docdb(numero, pais, kind)
+    return epo_ops.models.Epodoc(f"{pais}{numero}")
+
+
+def _sem_resultado(exc: Exception) -> bool:
+    """O EPO devolve 404 tanto para 'nao existe' quanto para 'busca sem resultado'.
+    Tratar como erro faz uma busca legitimamente vazia parecer falha de sistema."""
+    return "404" in str(exc)
 
 
 @mcp.tool()
@@ -197,7 +252,23 @@ def epo_busca(cql: str, inicio: int = 1, fim: int = 25) -> dict:
     if inicio < 1 or fim < inicio:
         return {"erro": True, "mensagem": "Faixa invalida: exige 1 <= inicio <= fim."}
 
-    resp = cliente().published_data_search(cql=cql, range_begin=inicio, range_end=fim)
+    try:
+        resp = cliente().published_data_search(cql=cql, range_begin=inicio, range_end=fim)
+    except Exception as e:
+        if _sem_resultado(e):
+            return {
+                "cql": cql,
+                "total": 0,
+                "faixa": [inicio, fim],
+                "resultados": [],
+                "nota": (
+                    "Nenhum documento casou com esta CQL. Resultado vazio e valido "
+                    "e nao e falha de sistema. Antes de concluir ausencia de "
+                    "anterioridade, tente por classificacao IPC, que independe de "
+                    "vocabulario."
+                ),
+            }
+        raise
     _loga_quota("busca", resp)
 
     corpo = resp.json().get("ops:world-patent-data", {})
@@ -224,19 +295,28 @@ def epo_busca(cql: str, inicio: int = 1, fim: int = 25) -> dict:
 
 
 @mcp.tool()
-def epo_biblio(referencia: str, formato: str = "epodoc") -> dict:
+def epo_biblio(referencia: str) -> dict:
     """Dados bibliograficos de um documento: titulo, data, titulares, IPC.
 
     USE QUANDO: precisar confirmar titulo/data/titular de um numero que ja apareceu
     numa busca. Para o confronto elemento a elemento, use epo_texto_integral.
 
     Args:
-        referencia: 'BR102019000000A2' (epodoc) ou 'BR.102019000000.A2' (docdb).
-        formato: 'epodoc' (padrao) ou 'docdb'.
+        referencia: aceita a forma que epo_busca devolve ('BR-102022010731-A2'),
+            e tambem 'BR102022010731' ou 'EP1000000'.
     """
-    resp = cliente().published_data(
-        reference_type="publication", input=_entrada(referencia, formato), endpoint="biblio"
-    )
+    try:
+        resp = cliente().published_data(
+            reference_type="publication", input=_entrada(referencia), endpoint="biblio"
+        )
+    except Exception as e:
+        if _sem_resultado(e):
+            return {
+                "referencia_consultada": referencia,
+                "documentos": [],
+                "nota": "O EPO nao tem esse documento com essa referencia. Confira o numero.",
+            }
+        raise
     _loga_quota("biblio", resp)
     corpo = resp.json().get("ops:world-patent-data", {})
     docs = _lista(corpo.get("exchange-documents", {}).get("exchange-document"))
@@ -247,7 +327,7 @@ def epo_biblio(referencia: str, formato: str = "epodoc") -> dict:
 
 
 @mcp.tool()
-def epo_familia_inpadoc(referencia: str, formato: str = "epodoc") -> dict:
+def epo_familia_inpadoc(referencia: str) -> dict:
     """Familia INPADOC: todos os membros do mesmo pedido nas demais jurisdicoes.
 
     USE QUANDO: (a) souber o numero em um pais e precisar do equivalente em outro
@@ -257,9 +337,20 @@ def epo_familia_inpadoc(referencia: str, formato: str = "epodoc") -> dict:
     Vale para novidade: membros da mesma familia sao a MESMA invencao. Nao os
     conte como anterioridades independentes num claim chart.
     """
-    resp = cliente().family(
-        reference_type="publication", input=_entrada(referencia, formato)
-    )
+    try:
+        resp = cliente().family(
+            reference_type="publication", input=_entrada(referencia)
+        )
+    except Exception as e:
+        if _sem_resultado(e):
+            return {
+                "referencia_consultada": referencia,
+                "total_membros": 0,
+                "paises": [],
+                "membros": [],
+                "nota": "O EPO nao tem familia INPADOC para essa referencia.",
+            }
+        raise
     _loga_quota("familia", resp)
     corpo = resp.json().get("ops:world-patent-data", {})
     membros = _lista(
@@ -284,7 +375,7 @@ def epo_familia_inpadoc(referencia: str, formato: str = "epodoc") -> dict:
 
 
 @mcp.tool()
-def epo_texto_integral(referencia: str, secao: str = "claims", formato: str = "epodoc") -> dict:
+def epo_texto_integral(referencia: str, secao: str = "claims") -> dict:
     """Texto integral por secao: reivindicacoes, descricao ou resumo.
 
     USE QUANDO: for confrontar elemento a elemento. Peca 'claims' primeiro -- as
@@ -309,7 +400,7 @@ def epo_texto_integral(referencia: str, secao: str = "claims", formato: str = "e
     try:
         resp = cliente().published_data(
             reference_type="publication",
-            input=_entrada(referencia, formato),
+            input=_entrada(referencia),
             endpoint=endpoint,
         )
     except Exception as e:  # 404 = sem texto integral nessa jurisdicao
