@@ -11,8 +11,8 @@ claude
 ```
 
 Rode dentro de `C:\Users\Gabriel\Desktop\Patentes`. Na primeira execução o Claude Code
-pede aprovação dos servidores MCP declarados em `.mcp.json` — aceite os três (`uspto`,
-`epo`, `lens`). Confira com `/mcp`: os três devem aparecer como *connected*.
+pede aprovação dos servidores MCP declarados em `.mcp.json` — aceite os quatro (`uspto`,
+`epo`, `inpi`, `lens`). Confira com `/mcp`: os quatro devem aparecer como *connected*.
 
 **Depois de editar `.mcp.json` ou `.env`, reinicie o Claude Code.** Os servidores sobem
 uma vez, no início da sessão.
@@ -96,21 +96,24 @@ interno]` — não use em entregável de cliente enquanto a assinatura não esti
 .venv/Scripts/python.exe -m pytest epo lens inpi -q
 ```
 
-47 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
-número entre as três fontes, tratamento de 401/404/429, e a regra de que prazo só é lido
-quando o INPI o escreveu.
+49 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
+número entre as três fontes, tratamento de 401/404/429, e a recusa de ler como prazo
+ativo um prazo que já foi perdido.
 
 ## Estrutura
 
 ```
-.mcp.json                 fiação dos três servidores
+.mcp.json                 fiação dos quatro servidores
 .env                      credenciais (gitignored; modelo em .env.example)
 .claude/skills/analista-patentes-inpi/
     SKILL.md              o método de exame
     references/           protocolo anti-alucinação, sintaxe BRS e CQL, claim chart, LPI
 epo/ lens/                servidores MCP + testes
+inpi/  ingest.py          carga dos CSVs do INPI no DuckDB
+       inpi_mcp.py        servidor MCP da base brasileira + testes
+       data/              CSVs e .duckdb (gitignored, ~4 GB)
+       referencias/       contrato das fontes do INPI
 vendor/patent_mcp_server/ clone do servidor USPTO (não editar)
-inpi/referencias/         contrato das fontes da RPI
 docs/aceite/              evidência de que cada fase funciona
 ```
 
@@ -124,10 +127,10 @@ docs/aceite/              evidência de que cada fase funciona
   tem o texto", não "o documento não revela o elemento".
 - **Família INPADOC é uma invenção só.** BR, US e CN do mesmo depósito contam como **um**
   documento no exame de novidade, não como três anterioridades.
-- **O agente não calcula prazo do INPI, de propósito.** Só 1% dos 5,3 M despachos declara
-  o prazo no texto. Nos outros, `dias_citados_no_texto` vem vazio — significa "o despacho
-  não declarou", não "não há prazo". Deduzir por analogia entre códigos é como se perde
-  direito. Você recebe o código, a data da RPI e o texto literal; a contagem é do
-  procurador.
+- **O agente não calcula prazo do INPI, de propósito.** `dias_citados_no_texto` é leitura
+  mecânica e cobre 0,83% dos 5,3 M despachos. Vazio significa "o texto não trouxe número
+  inequívoco", não "não há prazo". E **mesmo preenchido não é garantia**: despacho de
+  arquivamento cita o prazo que já foi perdido. Leia sempre o texto literal. A contagem é
+  do procurador.
 - **A base do INPI é um dump com data de corte.** Busca vazia numa base de três meses
   atrás não é prova de ausência de anterioridade. Pergunte a cobertura antes de concluir.
