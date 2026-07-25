@@ -46,8 +46,16 @@ Antes de afirmar qualquer anterioridade, execute busca nas bases disponíveis no
   pergunta envolve Brasil ou China e só o PPUBS respondeu, a busca está incompleta.
   Membros de uma mesma família INPADOC são a **mesma** invenção: contam como um
   documento no confronto de novidade, não como vários.
-- **Despachos e prazos BR** — base local da RPI. Nunca deduza prazo por analogia entre
-  despachos; código ausente da tabela revisada retorna `PRAZO DESCONHECIDO`.
+- **Texto, andamento e despachos BR** — base local do INPI em DuckDB (dados abertos,
+  RPI 694/1972 até a última terça). É a **única** fonte aqui que busca no texto de
+  patente brasileira e que traz o histórico processual completo. Sempre confira
+  `inpi_cobertura` antes de afirmar ausência: resultado vazio de base desatualizada não
+  prova nada.
+
+**Prazos.** O agente **não calcula prazo**. Só 1% dos despachos declara "N dias" no
+texto; nos demais, `prazo_declarado_dias` vem `null` — que significa *"o despacho não
+declarou"*, nunca *"não há prazo"*. Nunca deduza por analogia entre códigos. Entregue o
+código, a data da RPI e o texto literal publicado; a contagem é do procurador.
 
 Sempre três ângulos, nunca um: por **classificação** (CPC/IPC — imune a vocabulário), por
 **termo** com truncamento, e por **reivindicação**. Cada um erra de um jeito diferente.

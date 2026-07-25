@@ -23,10 +23,21 @@ uma vez, no início da sessão.
 | :--- | :--- | :--- |
 | `uspto` | patentes e pedidos dos EUA, texto integral, PTAB | nenhuma (PPUBS é público) |
 | `epo` | **BR, CN, EP e +100 jurisdições** via INPADOC/DOCDB | `EPO_OPS_KEY` + `EPO_OPS_SECRET` ✅ |
+| `inpi` | **Brasil**: texto, andamento e 5,3 M despachos, 1972→hoje | nenhuma (base local) ✅ |
 | `lens` | acervo global de patentes; NPL (academia) | `LENS_TOKEN` ⚠️ trial, só Patent API |
 
-Faltando: `USPTO_API_KEY` (destrava dados de andamento e PTAB dos EUA — busca funciona
-sem ela) e a camada INPI local, bloqueada em `docs/` até haver um arquivo real da RPI.
+Faltando só `USPTO_API_KEY` (destrava andamento e PTAB dos EUA — a busca funciona sem ela).
+
+### Atualizar a base do INPI
+
+Os dados abertos do INPI saem todo dia. Para refrescar a base local:
+
+1. Baixe os CSVs de https://dadosabertos.inpi.gov.br/index/patentes/ para `inpi/data/raw/`
+   (ou `patentes.zip` e descompacte lá).
+2. `.venv/Scripts/python.exe inpi/ingest.py` — ~2 min, recria o banco do zero.
+
+Pergunte `qual a cobertura da base do INPI?` a qualquer momento; a resposta traz a data
+de corte. **Resultado vazio de base velha não prova ausência de anterioridade.**
 
 ## Como se pede
 
@@ -49,6 +60,14 @@ A UFERSA depositou esse pedido em outros países? Traz a família INPADOC.
 
 ```
 Esse pedido cai no art. 10 da LPI? É método terapêutico ou programa em si?
+```
+
+```
+Qual o andamento do BR 10 2022 010731 2? Traz todos os despachos.
+```
+
+```
+Quais pedidos a UFERSA depositou em embalagem biodegradável?
 ```
 
 Peça sempre a **jurisdição**. Se você não disser, o agente pode responder só com os EUA —
@@ -74,11 +93,12 @@ interno]` — não use em entregável de cliente enquanto a assinatura não esti
 ## Testar sem abrir o Claude
 
 ```bash
-.venv/Scripts/python.exe -m pytest epo lens -q
+.venv/Scripts/python.exe -m pytest epo lens inpi -q
 ```
 
-29 testes, sem rede e sem credencial. Testam o que quebra em silêncio: achatamento do
-JSON do EPO, formato de referência, tratamento de 401/404/429.
+47 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
+número entre as três fontes, tratamento de 401/404/429, e a regra de que prazo só é lido
+quando o INPI o escreveu.
 
 ## Estrutura
 
@@ -104,3 +124,10 @@ docs/aceite/              evidência de que cada fase funciona
   tem o texto", não "o documento não revela o elemento".
 - **Família INPADOC é uma invenção só.** BR, US e CN do mesmo depósito contam como **um**
   documento no exame de novidade, não como três anterioridades.
+- **O agente não calcula prazo do INPI, de propósito.** Só 1% dos 5,3 M despachos declara
+  o prazo no texto. Nos outros, `prazo_declarado_dias` vem vazio — significa "o despacho
+  não declarou", não "não há prazo". Deduzir por analogia entre códigos é como se perde
+  direito. Você recebe o código, a data da RPI e o texto literal; a contagem é do
+  procurador.
+- **A base do INPI é um dump com data de corte.** Busca vazia numa base de três meses
+  atrás não é prova de ausência de anterioridade. Pergunte a cobertura antes de concluir.

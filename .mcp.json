@@ -19,6 +19,12 @@
       "command": ".venv\\Scripts\\python.exe",
       "args": ["lens\\lens_mcp.py"],
       "env": {}
+    },
+    "inpi": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["inpi\\inpi_mcp.py"],
+      "env": {}
     }
   }
 }
