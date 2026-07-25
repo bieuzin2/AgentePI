@@ -52,10 +52,15 @@ Antes de afirmar qualquer anterioridade, execute busca nas bases disponíveis no
   `inpi_cobertura` antes de afirmar ausência: resultado vazio de base desatualizada não
   prova nada.
 
-**Prazos.** O agente **não calcula prazo**. Só 1% dos despachos declara "N dias" no
-texto; nos demais, `prazo_declarado_dias` vem `null` — que significa *"o despacho não
-declarou"*, nunca *"não há prazo"*. Nunca deduza por analogia entre códigos. Entregue o
-código, a data da RPI e o texto literal publicado; a contagem é do procurador.
+**Prazos — nunca calcule, nunca deduza.** O campo `dias_citados_no_texto` é leitura
+mecânica do despacho e cobre 0,83% deles. `null` significa *"o texto não trouxe número
+inequívoco"*, jamais *"não há prazo"*. E mesmo preenchido, o número pode ser um prazo
+**já perdido** (despacho de arquivamento cita o prazo que causou o arquivamento) ou o
+prazo de outro ato. Sempre leia `complemento_despacho`.
+
+Ao relatar prazo, entregue sempre os quatro: **código, número e data da RPI, e o texto
+literal**. Feche com a ressalva de que a contagem é do procurador responsável. Deduzir
+prazo por analogia entre códigos é como se perde direito de terceiro.
 
 Sempre três ângulos, nunca um: por **classificação** (CPC/IPC — imune a vocabulário), por
 **termo** com truncamento, e por **reivindicação**. Cada um erra de um jeito diferente.

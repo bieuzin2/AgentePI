@@ -58,11 +58,36 @@ def test_prazo_so_e_lido_quando_o_inpi_escreveu():
     texto = ("Teor da exigência disponível no parecer (pdf). Prazo para cumprimento "
              "- 30 (Trinta) dias corridos contados do 1º dia útil após essa publicação")
     assert m._prazo_declarado(texto) == 30
-    assert m._prazo_declarado("Reconhecido o obstáculo e devolvido o prazo de 90 (noventa) dias") == 90
+    assert m._prazo_declarado("Reconhecida a justa causa, CONCEDIDO o prazo de 46 "
+                              "(quarenta e seis) dias, contados da publicação no RPI") == 46
     assert m._prazo_declarado("") is None
     assert m._prazo_declarado(None) is None
     # 'prazo' sem numero de dias nao vira prazo
     assert m._prazo_declarado("Arquivamento da petição de prazo nº01670004313") is None
+
+
+def test_prazo_ja_perdido_nao_vira_prazo_ativo():
+    """Regressao do pior falso positivo possivel. Texto real do despacho 11.2:
+    o '90 dias' citado e o prazo que JA FOI PERDIDO e que causou o arquivamento.
+    Le-lo como prazo a correr diria que ha tres meses para agir sobre um pedido morto."""
+    texto_11_2 = (
+        "Arquivo o pedido de patente de invenção, conforme o disposto no art. 36 § 1° "
+        "da LPI (Lei 9279 / 96) de 14/05/1996, em face da não apresentação de "
+        "cumprimento da exigência notificada na RPI n° 2596 de 06/10/2020 em até "
+        "90 (noventa) dias."
+    )
+    assert m._prazo_declarado(texto_11_2) is None
+
+
+def test_dois_prazos_no_mesmo_texto_e_ambiguo():
+    """Texto real do 11.6.1: cita o prazo perdido E o prazo de recurso. Escolher
+    um dos dois seria chute; devolver None manda ler o texto literal."""
+    texto_11_6_1 = (
+        "Arquivada a petição, uma vez que não foi apresentada a procuração devida no "
+        "prazo de 60 ( sessenta) dias contados da prática do ato. Desta data corre o "
+        "prazo de 60 ( sessenta ) dias para eventual recurso do interessado"
+    )
+    assert m._prazo_declarado(texto_11_6_1) is None
 
 
 # --- consultas (exigem banco) -----------------------------------------------
@@ -80,7 +105,7 @@ def test_processo_real_traz_ficha_completa():
     assert len(set(d["ipc"])) == len(d["ipc"]), "IPC duplicado"
     assert len(d["despachos"]) >= 8
     # o despacho 2.5 declara 30 dias no proprio texto
-    assert any(x["prazo_declarado_dias"] == 30 for x in d["despachos"])
+    assert any(x["dias_citados_no_texto"] == 30 for x in d["despachos"])
 
 
 @precisa_banco

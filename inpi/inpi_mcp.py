@@ -49,6 +49,20 @@ def con() -> duckdb.DuckDBPyConnection:
 # "N (por extenso) dias" -- so reconhecemos prazo quando o INPI o escreveu.
 _RE_PRAZO = re.compile(r"(\d{1,3})\s*\(\s*[a-zA-ZçÇãáéíóúâêô ]+\s*\)\s*dias", re.I)
 
+# Despacho de arquivamento/extincao cita o prazo que JA FOI PERDIDO. Exemplo real
+# do codigo 11.2: "Arquivo o pedido ... em face da nao apresentacao de cumprimento
+# da exigencia notificada na RPI 2596 ... em ate 90 (noventa) dias". Ler esses 90
+# dias como prazo ativo diria ao operador que ha tres meses para agir sobre um
+# pedido que ja morreu. Diante deste marcador, nao extraimos nada.
+# Casa o VERBO DA DECISAO ja tomada, nao o aviso condicional. O proprio texto do
+# despacho 2.5 -- que tem prazo ativo legitimo de 30 dias -- avisa que "o pedido com
+# exigencia nao cumprida ... nao sera aceito"; isso e advertencia, nao arquivamento.
+_RE_CONSUMADO = re.compile(
+    r"\b(arquiv(?:o|a|ada|ado|amos|ei)|indefir(?:o|imos)|indeferid[oa]|"
+    r"extint[oa]|em face d[ao] n[ãa]o)\b",
+    re.I,
+)
+
 
 def normaliza_numero(bruto: str) -> str:
     """Normaliza qualquer forma usual para a chave do INPI.
@@ -73,8 +87,24 @@ def _linhas(sql: str, params: list | None = None) -> list[dict[str, Any]]:
 
 
 def _prazo_declarado(texto: str | None) -> int | None:
-    m = _RE_PRAZO.search(texto or "")
-    return int(m.group(1)) if m else None
+    """Le "N (por extenso) dias" do texto do despacho. NAO e calculo de prazo.
+
+    Isto e leitura mecanica de texto juridico livre, e a cobertura e de 0,83% dos
+    5,3 milhoes de despachos. Por isso o campo se chama 'dias_citados_no_texto' na
+    saida, e nao 'prazo': o numero pode se referir a um prazo ja perdido, ao prazo
+    de outro ato, ou a uma advertencia condicional. O texto literal vai junto
+    justamente para o humano decidir o que aquele numero significa.
+
+    Conservador de proposito: na duvida devolve None, que manda ler o texto --
+    sempre seguro. Um numero errado aqui perde direito de terceiro.
+    """
+    t = texto or ""
+    achados = _RE_PRAZO.findall(t)
+    if len(achados) != 1:
+        return None  # zero: nao declarou. mais de um: ambiguo, qual deles vale?
+    if _RE_CONSUMADO.search(t):
+        return None  # o prazo citado e o que ja passou, nao um prazo a correr
+    return int(achados[0])
 
 
 @mcp.tool()
@@ -119,7 +149,7 @@ def inpi_processo(numero: str) -> dict:
         [num],
     )
     for d in despachos:
-        d["prazo_declarado_dias"] = _prazo_declarado(d.get("complemento_despacho"))
+        d["dias_citados_no_texto"] = _prazo_declarado(d.get("complemento_despacho"))
 
     return {
         "numero_inpi": num,
@@ -163,11 +193,13 @@ def inpi_processo(numero: str) -> dict:
         "despachos": despachos,
         "ultimo_despacho": despachos[-1] if despachos else None,
         "aviso_prazo": (
-            "Os despachos vem com a data da RPI e o texto literal publicado. Este "
-            "servidor NAO calcula prazo: 'prazo_declarado_dias' so vem preenchido "
-            "quando o proprio INPI escreveu o numero de dias no despacho. Ausencia "
-            "significa 'o despacho nao declarou', nunca 'nao ha prazo'. A contagem "
-            "e do procurador responsavel."
+            "Este servidor NAO calcula prazo. 'dias_citados_no_texto' e leitura "
+            "mecanica do texto do despacho e cobre 0,83% deles; quando vem null "
+            "significa 'o texto nao trouxe um numero inequivoco', nunca 'nao ha "
+            "prazo'. Mesmo preenchido, o numero pode se referir a prazo ja perdido "
+            "ou ao prazo de outro ato -- por isso leia sempre "
+            "'complemento_despacho'. Ao relatar, cite codigo, numero e data da RPI "
+            "e o texto literal. A contagem e do procurador responsavel."
         ),
     }
 
@@ -301,7 +333,7 @@ def inpi_despachos_por_rpi(numero_rpi: int | None = None, desde: str | None = No
         params,
     )
     for l in linhas:
-        l["prazo_declarado_dias"] = _prazo_declarado(l.get("complemento_despacho"))
+        l["dias_citados_no_texto"] = _prazo_declarado(l.get("complemento_despacho"))
     return {"retornados": len(linhas), "resultados": linhas}
 
 

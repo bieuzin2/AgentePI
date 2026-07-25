@@ -125,7 +125,7 @@ docs/aceite/              evidência de que cada fase funciona
 - **Família INPADOC é uma invenção só.** BR, US e CN do mesmo depósito contam como **um**
   documento no exame de novidade, não como três anterioridades.
 - **O agente não calcula prazo do INPI, de propósito.** Só 1% dos 5,3 M despachos declara
-  o prazo no texto. Nos outros, `prazo_declarado_dias` vem vazio — significa "o despacho
+  o prazo no texto. Nos outros, `dias_citados_no_texto` vem vazio — significa "o despacho
   não declarou", não "não há prazo". Deduzir por analogia entre códigos é como se perde
   direito. Você recebe o código, a data da RPI e o texto literal; a contagem é do
   procurador.
