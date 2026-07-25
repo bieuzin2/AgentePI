@@ -1,0 +1,22 @@
+# segredos — nunca versionar
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# dados brutos e derivados (a fonte de verdade sao os ZIPs da RPI, versionados fora do git)
+inpi/data/
+*.duckdb
+*.duckdb.wal
+
+# ambiente
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# vendor: clones de terceiros, re-clonaveis
+vendor/
+
+# marketplace de skills clonado (28 MB, re-clonavel)
+.claude/skills/claude-skills/
