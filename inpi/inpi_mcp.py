@@ -1235,6 +1235,112 @@ def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
 
 
 @mcp.tool()
+def inpi_conflitos_identidade(escritorio: str | None = None, limite: int = 30) -> dict:
+    """Onde o NOME e o DOCUMENTO do procurador discordam. Base para revisao humana.
+
+    USE QUANDO: antes de fechar qualquer numero de carteira ou de mercado. Um
+    conflito nao resolvido significa que aqueles processos podem estar no escritorio
+    errado.
+
+    Nenhum dos dois campos e confiavel sozinho: o nome vem em 17.521 grafias, e o
+    documento tem pureza media de 91,4% -- 255 dos 1.073 CNPJs apontam para mais de
+    uma banca. Esta tool NAO decide qual lado esta certo; mostra os dois com a
+    contagem e os principais clientes de cada, para voce julgar.
+
+    O caso que motivou o desenho: o CNPJ 33163049 tem 181.760 processos com nome
+    DANNEMANN e 6.675 com nome CLARKE MODET, com carteiras de clientes
+    completamente diferentes e datas sobrepostas de 1981 a 2026.
+    """
+    cond, params = ["c.confianca = 'conflito'"], []
+    if escritorio:
+        chave = _chave_escritorio(escritorio)
+        cond.append("(c.nome = ? OR c.nome_do_doc = ?)")
+        params += [chave, chave]
+    params.append(max(1, min(limite, 200)))
+
+    linhas = _linhas(
+        f"""SELECT c.nome, c.doc, c.processos, c.nome_do_doc, c.doc_do_nome,
+                   c.pureza_doc, c.pureza_nome,
+                   round(jaro_winkler_similarity(c.nome, c.nome_do_doc), 3) sim_nome
+            FROM identidade_escritorio c
+            WHERE {' AND '.join(cond)}
+            ORDER BY c.processos DESC LIMIT ?""",
+        params,
+    )
+
+    # Dois tipos de conflito, e so um exige julgamento.
+    # Nome parecido + documento puro = nome truncado ou razao social antiga; o
+    # documento manda ('DANIEL' -> 'DANIEL ALT DE DANIEL', 5.556 processos).
+    # Nome diferente = disputa real, como Clarke x Dannemann.
+    for l in linhas:
+        a, b = l["nome"], l["nome_do_doc"] or ""
+        # Um nome contido no outro, sobre o mesmo CNPJ, e a mesma banca: nome
+        # truncado ('DANIEL' em 'DANIEL ALT DE DANIEL' -- 'ALT DE' e 'alteracao de',
+        # razao social anterior), ou sufixo societario ('BEERRE' / 'BEERRE S C').
+        # Vale independente da pureza do CNPJ: a substring ja e a evidencia.
+        contido = bool(a) and bool(b) and (a in b or b in a)
+        l["tipo"] = (
+            "resolvivel_pelo_documento"
+            if contido or ((l["sim_nome"] or 0) >= 0.85 and (l["pureza_doc"] or 0) >= 0.90)
+            else "requer_decisao"
+        )
+        if l["tipo"] == "resolvivel_pelo_documento":
+            l["linha_para_o_csv"] = (
+                f'{l["nome"]},{l["nome_do_doc"]},{l["processos"]},,,'
+                f'"mesmo CNPJ {l["doc"]} (pureza {l["pureza_doc"]}), '
+                f'similaridade {l["sim_nome"]}"'
+            )
+
+    # Evidencia: quem sao os clientes de cada lado do conflito.
+    for l in linhas:
+        l["principais_clientes"] = [
+            r["depositante"]
+            for r in _linhas(
+                """SELECT arg_max(dp.depositante, 1) depositante
+                   FROM procuradores p
+                   JOIN escritorios e ON e.original = p.procurador
+                   JOIN depositantes dp ON dp.numero_inpi = p.numero_inpi
+                   WHERE e.chave = ? AND substr(p.cgccpfprocurador, 1, 8) = ?
+                   GROUP BY dp.depositante ORDER BY count(*) DESC LIMIT 3""",
+                [l["nome"], l["doc"]],
+            )
+        ]
+        l["leitura"] = (
+            f"{l['processos']:,} processos gravados com o nome '{l['nome']}' e o "
+            f"documento {l['doc']}, que majoritariamente pertence a "
+            f"'{l['nome_do_doc']}'. O nome '{l['nome']}' usa majoritariamente o "
+            f"documento {l['doc_do_nome']}."
+        )
+
+    por_tipo: dict[str, int] = {}
+    proc_por_tipo: dict[str, int] = {}
+    for l in linhas:
+        por_tipo[l["tipo"]] = por_tipo.get(l["tipo"], 0) + 1
+        proc_por_tipo[l["tipo"]] = proc_por_tipo.get(l["tipo"], 0) + l["processos"]
+
+    return {
+        "filtro": {"escritorio": escritorio},
+        "conflitos": len(linhas),
+        "por_tipo": por_tipo,
+        "processos_por_tipo": proc_por_tipo,
+        "resultados": linhas,
+        "como_resolver": (
+            "'resolvivel_pelo_documento': nome truncado ou razao social antiga sobre um "
+            "CNPJ puro -- copie 'linha_para_o_csv' para "
+            "inpi/referencias/escritorios-apelidos.csv e reingira. "
+            "'requer_decisao': os nomes sao de bancas diferentes; olhe os clientes de "
+            "cada lado e decida. Se o nome estiver certo e o documento errado, nao ha "
+            "o que fazer -- a chave ja e o nome."
+        ),
+        "aviso": (
+            "Nao ha desempate automatico, de proposito. No caso Clarke/Dannemann as "
+            "duas carteiras tem clientes distintos e plausiveis, e escolher por regra "
+            "moveria milhares de processos para o escritorio errado."
+        ),
+    }
+
+
+@mcp.tool()
 def inpi_candidatos_vinculo(escritorio: str | None = None, min_clientes_comuns: int = 15,
                             cobertura_minima: float = 0.6, limite: int = 40) -> dict:
     """Encontra nomes que provavelmente sao a MESMA banca, para revisao humana.

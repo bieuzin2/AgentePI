@@ -164,6 +164,81 @@ def _materializa_titulares(con) -> None:
           f"(-{1 - ch / max(n, 1):.0%})   {time.time() - t0:5.1f}s", flush=True)
 
 
+def _vota_identidade(con) -> None:
+    """Cruza nome normalizado x documento do procurador, e marca os conflitos.
+
+    POR QUE CRUZAR: nenhum dos dois campos e confiavel sozinho.
+      - O nome vem em 17.521 grafias para ~10 mil bancas.
+      - O documento parece resolver, mas esta poluido: pureza media de 91,4%, e
+        255 dos 1.073 CNPJs mapeiam para mais de uma banca com menos de 90% de
+        concentracao.
+
+    O caso que define o desenho: o CNPJ 33163049 tem 181.760 processos com nome
+    DANNEMANN e 6.675 com nome CLARKE MODET. Investigado -- as duas carteiras tem
+    clientes completamente diferentes (Motorola/Lucent/Mobil de um lado,
+    Huawei/Syngenta/Petrobras do outro) e datas sobrepostas de 1981 a 2026. NAO da
+    para decidir por regra qual lado esta certo.
+
+    Por isso esta funcao NAO desempata. Ela marca:
+      confianca='alta'      nome e documento apontam um para o outro
+      confianca='conflito'  discordam -- vai para revisao humana com a evidencia
+      confianca='sem_doc'   nao ha documento utilizavel
+    """
+    t0 = time.time()
+    con.execute("""
+      CREATE OR REPLACE TEMP VIEW _pares AS
+      SELECT e.chave AS nome,
+             CASE WHEN p.tipopessoaprocurador = 'Pessoa Jurídica'
+                       AND length(p.cgccpfprocurador) >= 8
+                       AND p.cgccpfprocurador NOT LIKE '%*%'
+                       AND p.cgccpfprocurador <> 'N/D'
+                  THEN substr(p.cgccpfprocurador, 1, 8) END AS doc,
+             count(DISTINCT p.numero_inpi) AS n
+      FROM procuradores p JOIN escritorios e ON e.original = p.procurador
+      GROUP BY 1, 2
+    """)
+    con.execute("DROP TABLE IF EXISTS identidade_escritorio")
+    con.execute("""
+      CREATE TABLE identidade_escritorio AS
+      WITH
+      -- para cada documento, o nome majoritario
+      doc_para_nome AS (
+        SELECT doc, arg_max(nome, n) AS nome_do_doc, sum(n) AS total_doc,
+               max(n) AS dom_doc
+        FROM _pares WHERE doc IS NOT NULL GROUP BY doc
+      ),
+      -- para cada nome, o documento majoritario
+      nome_para_doc AS (
+        SELECT nome, arg_max(doc, n) AS doc_do_nome, sum(n) AS total_nome,
+               max(n) AS dom_nome
+        FROM _pares WHERE doc IS NOT NULL GROUP BY nome
+      )
+      SELECT p.nome, p.doc, p.n AS processos,
+             d.nome_do_doc, n2.doc_do_nome,
+             round(d.dom_doc * 1.0 / d.total_doc, 3) AS pureza_doc,
+             round(n2.dom_nome * 1.0 / n2.total_nome, 3) AS pureza_nome,
+             CASE
+               WHEN p.doc IS NULL THEN 'sem_doc'
+               WHEN d.nome_do_doc = p.nome AND n2.doc_do_nome = p.doc THEN 'alta'
+               ELSE 'conflito'
+             END AS confianca
+      FROM _pares p
+      LEFT JOIN doc_para_nome d USING (doc)
+      LEFT JOIN nome_para_doc n2 USING (nome)
+    """)
+    r = con.execute("""
+      SELECT count(*) pares,
+             sum(processos) FILTER (WHERE confianca='alta') alta,
+             sum(processos) FILTER (WHERE confianca='conflito') conflito,
+             sum(processos) FILTER (WHERE confianca='sem_doc') sem_doc
+      FROM identidade_escritorio
+    """).fetchone()
+    tot = (r[1] or 0) + (r[2] or 0) + (r[3] or 0)
+    print(f"  identidade     {r[0]:>12,} pares   alta={r[1] or 0:,} "
+          f"conflito={r[2] or 0:,} ({(r[2] or 0)/max(tot,1):.1%}) "
+          f"sem_doc={r[3] or 0:,}   {time.time()-t0:5.1f}s", flush=True)
+
+
 def _materializa_nomes(con) -> None:
     """Cria a tabela de chaves normalizadas de ESCRITORIO.
 
@@ -251,6 +326,7 @@ def main() -> int:
     # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
     _materializa_nomes(con)
     _materializa_titulares(con)
+    _vota_identidade(con)
 
     print(f"\nBanco: {BANCO}  ({BANCO.stat().st_size/1e6:.0f} MB)")
     con.close()
