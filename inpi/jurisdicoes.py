@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from anuidades import _mais_anos, _mais_meses
+from anuidades import _mais_meses
 
 TABELA = Path(__file__).resolve().parent / "referencias" / "anuidades-por-jurisdicao.csv"
 
@@ -49,9 +49,14 @@ class Regra:
     revisado_por: str
     confianca: str
 
+    revisado_em: str = ""
+
     @property
     def projeta(self) -> bool:
-        return self.confianca in CONFIANCA_QUE_PROJETA or bool(self.revisado_por)
+        # Exige revisado_por E revisado_em, como o docstring do modulo promete.
+        # A versao anterior aceitava so um dos dois e furava a trava.
+        revisado = bool(self.revisado_por) and bool(self.revisado_em)
+        return self.confianca in CONFIANCA_QUE_PROJETA or revisado
 
 
 def _int(v, padrao=None):
@@ -79,6 +84,7 @@ def carregar() -> dict[str, Regra]:
                 fonte=r["fonte"],
                 revisado_por=r["revisado_por"].strip(),
                 confianca=r["confianca"].strip(),
+                revisado_em=r.get("revisado_em", "").strip(),
             )
     return regras
 
@@ -133,10 +139,14 @@ def fase_nacional(data_prioridade: date, jurisdicoes: list[str] | None = None) -
     """
     regras = carregar()
     alvos = [j.strip().upper() for j in (jurisdicoes or regras.keys())]
-    saida = []
+    saida, desconhecidas, sem_prazo = [], [], []
     for j in alvos:
         r = regras.get(j)
-        if not r or not r.fase_nacional_meses:
+        if not r:
+            desconhecidas.append(j)
+            continue
+        if not r.fase_nacional_meses:
+            sem_prazo.append(j)
             continue
         saida.append({
             "jurisdicao": j,
@@ -145,7 +155,8 @@ def fase_nacional(data_prioridade: date, jurisdicoes: list[str] | None = None) -
             "prazo": _mais_meses(data_prioridade, r.fase_nacional_meses).isoformat(),
         })
     saida.sort(key=lambda x: x["prazo"])
-    return {
+
+    r = {
         "data_prioridade": data_prioridade.isoformat(),
         "prazos": saida,
         "aviso": (
@@ -155,3 +166,16 @@ def fase_nacional(data_prioridade: date, jurisdicoes: list[str] | None = None) -
             "das jurisdicoes."
         ),
     }
+    # Omitir jurisdicao pedida e nao respondida seria o pior tipo de silencio: o
+    # operador acharia que nao ha prazo la, num prazo que nao se recupera.
+    if desconhecidas:
+        r["nao_encontradas"] = desconhecidas
+        r["alerta_nao_encontradas"] = (
+            f"NAO estao na tabela e por isso NAO foram calculadas: "
+            f"{', '.join(desconhecidas)}. Ausencia aqui nao significa ausencia de prazo "
+            "-- acrescente em referencias/anuidades-por-jurisdicao.csv ou pergunte ao "
+            "associado."
+        )
+    if sem_prazo:
+        r["sem_prazo_de_fase_nacional"] = sem_prazo
+    return r

@@ -30,14 +30,18 @@ Faltando só `USPTO_API_KEY` (destrava andamento e PTAB dos EUA — a busca func
 
 ### Atualizar a base do INPI
 
-Os dados abertos do INPI saem todo dia. Para refrescar a base local:
+Os dados abertos saem todo dia; a RPI, toda terça.
 
-1. Baixe os CSVs de https://dadosabertos.inpi.gov.br/index/patentes/ para `inpi/data/raw/`
-   (ou `patentes.zip` e descompacte lá).
-2. `.venv/Scripts/python.exe inpi/ingest.py` — ~2 min, recria o banco do zero.
+```bash
+.venv/Scripts/python.exe inpi/ingest.py --baixar
+```
 
-Pergunte `qual a cobertura da base do INPI?` a qualquer momento; a resposta traz a data
-de corte. **Resultado vazio de base velha não prova ausência de anterioridade.**
+Baixa os 10 CSVs (~2,2 GB) e recria o banco. Sem `--baixar`, carrega o que já estiver em
+`inpi/data/raw/`. Leva ~3 min no total.
+
+Pergunte `qual a cobertura da base do INPI?` a qualquer momento. Se a última RPI carregada
+tiver mais de 8 dias, a resposta vem com alerta — **resultado vazio de base velha não prova
+ausência de anterioridade nem de movimentação.**
 
 ## Como se pede
 
@@ -70,6 +74,39 @@ Qual o andamento do BR 10 2022 010731 2? Traz todos os despachos.
 Quais pedidos a UFERSA depositou em embalagem biodegradável?
 ```
 
+### Controle de carteira e prazos
+
+```
+Quais prazos vencem na carteira da Clarke Modet no próximo trimestre?
+```
+
+```
+Quantas anuidades a Petrobras tem projetadas para 2026?
+```
+
+```
+Quais casos nossos vencem o prazo do art. 33 (requerimento de exame) este ano?
+```
+
+```
+O que saiu de novo nos casos da Clarke Modet desde a semana passada?
+```
+
+### Mercado e prospecção
+
+```
+Qual nossa participação de mercado em polímeros (IPC C08)?
+```
+
+```
+Quem deposita muito em C08 e não é nosso cliente?
+```
+
+```
+Qual a regra de manutenção de patente nos EUA? E o prazo de fase nacional
+de um PCT com prioridade em 15/01/2024?
+```
+
 Peça sempre a **jurisdição**. Se você não disser, o agente pode responder só com os EUA —
 e uma busca de anterioridade que ignora Brasil e China está incompleta.
 
@@ -96,9 +133,10 @@ interno]` — não use em entregável de cliente enquanto a assinatura não esti
 .venv/Scripts/python.exe -m pytest epo lens inpi -q
 ```
 
-49 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
-número entre as três fontes, tratamento de 401/404/429, e a recusa de ler como prazo
-ativo um prazo que já foi perdido.
+91 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
+número entre as três fontes e de grafia de escritório, tratamento de 401/404/429, a recusa
+de ler como prazo ativo um prazo que já foi perdido, e a de tratar como encerrado um
+processo cujo indeferimento foi revertido por recurso.
 
 ## Estrutura
 
@@ -109,10 +147,15 @@ ativo um prazo que já foi perdido.
     SKILL.md              o método de exame
     references/           protocolo anti-alucinação, sintaxe BRS e CQL, claim chart, LPI
 epo/ lens/                servidores MCP + testes
-inpi/  ingest.py          carga dos CSVs do INPI no DuckDB
-       inpi_mcp.py        servidor MCP da base brasileira + testes
-       data/              CSVs e .duckdb (gitignored, ~4 GB)
-       referencias/       contrato das fontes do INPI
+inpi/  ingest.py          download e carga dos CSVs do INPI no DuckDB
+       inpi_mcp.py        servidor MCP da base brasileira (15 tools) + testes
+       anuidades.py       projeção sob os arts. 40, 84, 85 e 87 da LPI
+       jurisdicoes.py     regras de manutenção no exterior e fase nacional PCT
+       escritorios.py     normalização de grafia de escritório
+       data/              CSVs e .duckdb (gitignored, ~3,3 GB)
+       referencias/       fontes, prazos observados, apelidos, jurisdições
+docs/  capacidades.md     o que o agente responde e o que não
+       lgpd.md            decisão sobre dado pessoal em prospecção
 vendor/patent_mcp_server/ clone do servidor USPTO (não editar)
 docs/aceite/              evidência de que cada fase funciona
 ```
@@ -127,10 +170,19 @@ docs/aceite/              evidência de que cada fase funciona
   tem o texto", não "o documento não revela o elemento".
 - **Família INPADOC é uma invenção só.** BR, US e CN do mesmo depósito contam como **um**
   documento no exame de novidade, não como três anterioridades.
-- **O agente não calcula prazo do INPI, de propósito.** `dias_citados_no_texto` é leitura
+- **Prazo de exigência não é calculado, de propósito.** `dias_citados_no_texto` é leitura
   mecânica e cobre 0,83% dos 5,3 M despachos. Vazio significa "o texto não trouxe número
   inequívoco", não "não há prazo". E **mesmo preenchido não é garantia**: despacho de
-  arquivamento cita o prazo que já foi perdido. Leia sempre o texto literal. A contagem é
-  do procurador.
+  arquivamento cita o prazo que já foi perdido. Leia sempre o texto literal.
+- **Anuidade, art. 33, recurso e vigência são projetados** — esses dependem de data-base +
+  regra fixa, não de código ambíguo. Mas é **projeção, não fatura**: pagamento em dia não
+  gera despacho, então a base não sabe o que já foi pago. Lista de conferência contra o
+  docketing, nunca substituto dele.
 - **A base do INPI é um dump com data de corte.** Busca vazia numa base de três meses
   atrás não é prova de ausência de anterioridade. Pergunte a cobertura antes de concluir.
+- **O ranking de mercado subestima quem assina pelo agente.** O INPI registra o agente
+  pessoa física **no lugar** da banca: "Orlando de Souza" tem 11.972 processos e 4 em
+  comum com "Clarke Modet". Confira com `inpi_escritorio_resolver` antes de citar
+  participação, e mapeie os agentes em `inpi/referencias/escritorios-apelidos.csv`.
+- **Troca de escritório não é detectável.** A tabela `procuradores` guarda a representação
+  vigente, não a série histórica — só 262 processos em 775 mil têm mais de um escritório.

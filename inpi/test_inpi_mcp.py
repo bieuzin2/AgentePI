@@ -276,6 +276,53 @@ def test_novidades_recusa_data_em_formato_errado():
     assert r.get("erro") is True
 
 
+# --- C4/C5: cobertura e exterior -------------------------------------------
+
+import jurisdicoes as jur  # noqa: E402
+
+
+def test_so_o_brasil_projeta_datas():
+    """Assimetria deliberada: BR tem evidencia (285.409 despachos calibrados); as
+    demais sao transcricao de lei, sem nada nesta base que as confirme."""
+    assert jur.descrever("BR")["projeta_datas"] is True
+    for j in ("US", "EP", "CN", "JP", "IN"):
+        d = jur.descrever(j)
+        assert d["projeta_datas"] is False
+        assert "NAO REVISADA" in d["aviso"]
+
+
+def test_regra_traz_base_legal_mesmo_sem_projetar():
+    """Sem data, mas com o que o operador precisa para falar com o associado."""
+    d = jur.descrever("US")
+    assert "3.5" in d["quando"] and "manutencao" in d["tipo"]
+    assert "35 U.S.C." in d["base_legal"]
+
+
+def test_jurisdicao_desconhecida_nao_some_calada():
+    """Regressao: 'XX' era descartado em silencio. Num prazo irreversivel, omissao
+    faz o operador achar que nao ha prazo naquele pais."""
+    r = jur.fase_nacional(date(2024, 1, 15), ["US", "XX", "EP"])
+    assert "XX" in r["nao_encontradas"]
+    assert "alerta_nao_encontradas" in r
+    assert {p["jurisdicao"] for p in r["prazos"]} == {"US", "EP"}
+
+
+def test_fase_nacional_ordena_pelo_mais_urgente():
+    r = jur.fase_nacional(date(2024, 1, 15), ["EP", "US", "CN"])
+    prazos = [p["prazo"] for p in r["prazos"]]
+    assert prazos == sorted(prazos)
+    assert r["prazos"][0]["prazo"] == "2026-07-15"   # 30 meses
+    assert r["prazos"][-1]["prazo"] == "2026-08-15"  # EP, 31 meses
+
+
+@precisa_banco
+def test_cobertura_alerta_quando_a_base_envelhece():
+    c = m.inpi_cobertura()
+    assert "dias_desde_a_ultima_rpi_carregada" in c
+    atraso = c["dias_desde_a_ultima_rpi_carregada"]
+    assert ("ALERTA_BASE_DESATUALIZADA" in c) == (atraso > 8)
+
+
 # --- C3: carteira, mercado e prospeccao ------------------------------------
 
 import escritorios as esc  # noqa: E402

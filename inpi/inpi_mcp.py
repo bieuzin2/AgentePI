@@ -438,9 +438,22 @@ def inpi_cobertura() -> dict:
     r["com_titulo_resumo"] = _linhas("SELECT count(*) n FROM conteudo")[0]["n"]
     r["fonte"] = "https://dadosabertos.inpi.gov.br/index/patentes/ (CSV, diario)"
     r["nota"] = (
-        "A base e um dump local. Para atualizar, rebaixe os CSVs e rode "
-        "'python inpi/ingest.py'. Despachos posteriores a ultima_rpi nao estao aqui."
+        "A base e um dump local. Para atualizar: 'python inpi/ingest.py --baixar'. "
+        "Despachos posteriores a ultima_rpi nao estao aqui."
     )
+
+    # A base envelhece em silencio, e base velha faz busca vazia parecer ausencia de
+    # anterioridade. Uma RPI sai por semana, entao mais de 8 dias significa que ja
+    # houve publicacao que este dump nao viu.
+    atraso = (date.today() - r["ultima_rpi"]).days
+    r["dias_desde_a_ultima_rpi_carregada"] = atraso
+    if atraso > 8:
+        r["ALERTA_BASE_DESATUALIZADA"] = (
+            f"A ultima RPI carregada tem {atraso} dias. O INPI publica semanalmente, "
+            "as tercas -- ha pelo menos uma revista que esta base nao viu. NAO conclua "
+            "ausencia de anterioridade nem de movimentacao processual antes de rodar "
+            "'python inpi/ingest.py --baixar'."
+        )
     return r
 
 

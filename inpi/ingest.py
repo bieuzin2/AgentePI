@@ -1,10 +1,16 @@
 """Carrega os CSVs de dados abertos do INPI num DuckDB local.
 
 Fonte: https://dadosabertos.inpi.gov.br/index/patentes/ (atualizado diariamente).
-Baixe os CSVs para inpi/data/raw/ e rode:  python inpi/ingest.py
+
+    python inpi/ingest.py            # carrega o que ja esta em inpi/data/raw/
+    python inpi/ingest.py --baixar   # baixa os CSVs antes de carregar
 
 Idempotente: recria as tabelas do zero a cada execucao. Os CSVs sao a fonte de
 verdade; o .duckdb e derivado e pode ser jogado fora sem perda.
+
+NOTA DE REDE: revistas.inpi.gov.br e busca.inpi.gov.br derrubam o handshake TLS
+(ver referencias/fontes-rpi.md), mas dadosabertos.inpi.gov.br responde normal.
+E de la que vem tudo isto.
 """
 
 from __future__ import annotations
@@ -14,6 +20,8 @@ import time
 from pathlib import Path
 
 import duckdb
+
+BASE_URL = "https://dadosabertos.inpi.gov.br/download/patentes/"
 
 RAIZ = Path(__file__).resolve().parent
 BRUTO = RAIZ / "data" / "raw"
@@ -32,6 +40,47 @@ TABELAS = {
     "vinculos": "PATENTES_VINCULOS.csv",
     "renumeracoes": "PATENTES_RENUMERACOES.csv",
 }
+
+
+def baixar() -> int:
+    """Baixa os CSVs do INPI para inpi/data/raw/.
+
+    Grava em arquivo temporario e so renomeia no fim: uma queda no meio deixaria
+    um CSV truncado que o read_csv_auto carregaria em silencio, e a base ficaria
+    faltando processos sem ninguem perceber.
+    """
+    import httpx
+
+    BRUTO.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for arquivo in TABELAS.values():
+        destino = BRUTO / arquivo
+        parcial = destino.with_suffix(destino.suffix + ".parcial")
+        t0 = time.time()
+        try:
+            with httpx.stream("GET", BASE_URL + arquivo, timeout=120,
+                              follow_redirects=True) as r:
+                r.raise_for_status()
+                esperado = int(r.headers.get("content-length") or 0)
+                with parcial.open("wb") as fh:
+                    for bloco in r.iter_bytes(1 << 20):
+                        fh.write(bloco)
+            baixado = parcial.stat().st_size
+            if esperado and baixado != esperado:
+                parcial.unlink(missing_ok=True)
+                print(f"  {arquivo:<34} FALHOU: {baixado:,} de {esperado:,} bytes",
+                      flush=True)
+                return 1
+            parcial.replace(destino)
+            total += baixado
+            print(f"  {arquivo:<34} {baixado/1e6:>7.1f} MB  {time.time()-t0:5.1f}s",
+                  flush=True)
+        except Exception as e:
+            parcial.unlink(missing_ok=True)
+            print(f"  {arquivo:<34} FALHOU: {type(e).__name__}: {str(e)[:70]}", flush=True)
+            return 1
+    print(f"\n  total baixado: {total/1e9:.2f} GB\n", flush=True)
+    return 0
 
 
 def _materializa_nomes(con) -> None:
@@ -78,10 +127,16 @@ def _materializa_nomes(con) -> None:
 
 
 def main() -> int:
+    if "--baixar" in sys.argv:
+        print(f"Baixando de {BASE_URL}", flush=True)
+        if baixar() != 0:
+            return 1
+
     faltando = [f for f in TABELAS.values() if not (BRUTO / f).exists()]
     if faltando:
         print(f"CSVs ausentes em {BRUTO}:", ", ".join(faltando))
-        print("Baixe em https://dadosabertos.inpi.gov.br/index/patentes/")
+        print("Rode com --baixar, ou baixe de "
+              "https://dadosabertos.inpi.gov.br/index/patentes/")
         return 1
 
     BANCO.parent.mkdir(parents=True, exist_ok=True)
