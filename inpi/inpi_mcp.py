@@ -398,27 +398,92 @@ def inpi_despachos_por_rpi(numero_rpi: int | None = None, desde: str | None = No
 
 
 @mcp.tool()
-def inpi_portfolio_titular(nome: str, limite: int = 50) -> dict:
+def inpi_titular_resolver(nome: str) -> dict:
+    """Mostra em que chave canonica um titular cai, e quais grafias ela agrupa.
+
+    USE QUANDO: antes de citar qualquer numero por titular. Sao 362.483 grafias de
+    depositante na base -- so a Petrobras aparece em 66 formas, com 8 documentos
+    diferentes entre matriz, filiais e registros sem CNPJ.
+
+    A chave e 'CNPJ:xxxxxxxx' (raiz de 8 digitos, que junta matriz e filial) quando ha
+    documento, e o nome normalizado quando nao ha -- caso de 65% dos depositantes, que
+    sao estrangeiros.
+    """
+    chaves = _linhas(
+        """SELECT t.chave, count(DISTINCT dp.depositante) grafias,
+                  count(DISTINCT dp.numero_inpi) processos,
+                  arg_max(dp.depositante, 1) exemplo, any_value(t.tem_cnpj) tem_cnpj
+           FROM depositantes dp JOIN titulares t ON t.original = dp.depositante
+           WHERE dp.depositante ILIKE ?
+           GROUP BY t.chave ORDER BY processos DESC LIMIT 12""",
+        [f"%{nome.strip()}%"],
+    )
+    principal = chaves[0]["chave"] if chaves else None
+    grafias = _linhas(
+        """SELECT dp.depositante, count(DISTINCT dp.numero_inpi) n
+           FROM depositantes dp JOIN titulares t ON t.original = dp.depositante
+           WHERE t.chave = ? GROUP BY 1 ORDER BY n DESC LIMIT 20""",
+        [principal],
+    ) if principal else []
+
+    return {
+        "nome_consultado": nome,
+        "chave_principal": principal,
+        "chaves_encontradas": chaves,
+        "grafias_da_principal": grafias,
+        "nota": (
+            "Varias chaves para o mesmo grupo economico e esperado: subsidiarias tem "
+            "CNPJ proprio (Petrobras, Transpetro e Petrobras Distribuidora sao raizes "
+            "distintas). Some-as se a pergunta for sobre o grupo."
+        ),
+    }
+
+
+@mcp.tool()
+def inpi_portfolio_titular(nome: str, agrupar: bool = True, limite: int = 50) -> dict:
     """Pedidos de um depositante. Inteligencia competitiva sobre o mercado brasileiro.
 
     Args:
         nome: parte do nome do depositante (case-insensitive).
+        agrupar: True junta todas as grafias do mesmo titular pela chave canonica --
+            a Petrobras tem 66 grafias e 8 documentos. False busca so pelo texto.
     """
     limite = max(1, min(limite, 200))
-    linhas = _linhas(
-        """SELECT dp.numero_inpi, any_value(dp.depositante) depositante,
-                  any_value(dp.pais) pais, any_value(c.titulo) titulo,
-                  any_value(b.data_deposito) data_deposito
-           FROM depositantes dp
-           LEFT JOIN conteudo c USING (numero_inpi)
-           LEFT JOIN biblio b USING (numero_inpi)
-           WHERE dp.depositante ILIKE ?
-           GROUP BY dp.numero_inpi
-           ORDER BY data_deposito DESC NULLS LAST
-           LIMIT ?""",
-        [f"%{nome.strip()}%", limite],
-    )
-    return {"nome_buscado": nome, "retornados": len(linhas), "resultados": linhas}
+    if agrupar:
+        linhas = _linhas(
+            """WITH alvo AS (
+                 SELECT DISTINCT t.chave FROM depositantes dp
+                 JOIN titulares t ON t.original = dp.depositante
+                 WHERE dp.depositante ILIKE ?
+               )
+               SELECT dp.numero_inpi, any_value(dp.depositante) depositante,
+                      any_value(t.chave) titular_chave,
+                      any_value(dp.pais) pais, any_value(c.titulo) titulo,
+                      any_value(b.data_deposito) data_deposito
+               FROM depositantes dp
+               JOIN titulares t ON t.original = dp.depositante
+               JOIN alvo a ON a.chave = t.chave
+               LEFT JOIN conteudo c USING (numero_inpi)
+               LEFT JOIN biblio b USING (numero_inpi)
+               GROUP BY dp.numero_inpi
+               ORDER BY data_deposito DESC NULLS LAST LIMIT ?""",
+            [f"%{nome.strip()}%", limite],
+        )
+    else:
+        linhas = _linhas(
+            """SELECT dp.numero_inpi, any_value(dp.depositante) depositante,
+                      any_value(dp.pais) pais, any_value(c.titulo) titulo,
+                      any_value(b.data_deposito) data_deposito
+               FROM depositantes dp
+               LEFT JOIN conteudo c USING (numero_inpi)
+               LEFT JOIN biblio b USING (numero_inpi)
+               WHERE dp.depositante ILIKE ?
+               GROUP BY dp.numero_inpi
+               ORDER BY data_deposito DESC NULLS LAST LIMIT ?""",
+            [f"%{nome.strip()}%", limite],
+        )
+    return {"nome_buscado": nome, "agrupado": agrupar,
+            "retornados": len(linhas), "resultados": linhas}
 
 
 @mcp.tool()
@@ -992,7 +1057,11 @@ def inpi_carteira(escritorio: str, cliente: str | None = None,
     params: list = [chave]
     filtro_cli = ""
     if cliente:
-        filtro_cli = " AND dp.depositante ILIKE ?"
+        # Pela chave canonica, nao pelo texto: senao "Petrobras" perde os processos
+        # gravados como "PETROLEO BRASILEIRO S/A" sem a palavra, e vice-versa.
+        filtro_cli = """ AND dp.depositante IN (
+              SELECT t2.original FROM titulares t2 WHERE t2.chave IN (
+                SELECT t3.chave FROM titulares t3 WHERE t3.original ILIKE ?))"""
         params.append(f"%{cliente.strip()}%")
 
     linhas = _linhas(
@@ -1121,16 +1190,19 @@ def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
         params.append(desde)
     params += [chave_nossa, min_pedidos]
 
-    # Agrupa pelo nome cru no SQL e normaliza depois, em Python, sobre as poucas
-    # centenas de linhas do resultado -- materializar as ~500 mil chaves de titular
-    # na carga nao termina em tempo util, e aqui o volume e trivial.
-    brutos = _linhas(
-        f"""SELECT dp.depositante titular,
+    params.append(max(1, min(limite, 500)))
+    # Agrupa pela chave canonica de titular (raiz de CNPJ, ou nome normalizado).
+    # Sem isso a Petrobras aparece 66 vezes e nenhuma estatistica fecha.
+    linhas = _linhas(
+        f"""SELECT t.chave titular_chave,
+                   arg_max(dp.depositante, 1) titular,
+                   count(DISTINCT dp.depositante) grafias,
                    any_value(dp.pais) pais, any_value(dp.estado) uf,
                    any_value(dp.tipopessoadepositante) tipo_pessoa,
                    count(DISTINCT dp.numero_inpi) pedidos,
                    max(b.data_deposito) deposito_mais_recente
             FROM depositantes dp
+            JOIN titulares t ON t.original = dp.depositante
             LEFT JOIN ipc i USING (numero_inpi)
             LEFT JOIN biblio b USING (numero_inpi)
             WHERE {' AND '.join(cond)}
@@ -1139,23 +1211,11 @@ def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
                     JOIN escritorios e ON e.original = p.procurador
                     WHERE e.chave = ?
               )
-            GROUP BY dp.depositante
+            GROUP BY t.chave
             HAVING count(DISTINCT dp.numero_inpi) >= ?
-            ORDER BY pedidos DESC LIMIT 3000""",
+            ORDER BY pedidos DESC LIMIT ?""",
         params,
     )
-
-    agrupado: dict[str, dict] = {}
-    for b in brutos:
-        k = esc.normalizar(b["titular"])
-        if k not in agrupado:
-            agrupado[k] = {**b, "titular_chave": k, "grafias": 1}
-        else:
-            agrupado[k]["pedidos"] += b["pedidos"]
-            agrupado[k]["grafias"] += 1
-            if str(b["deposito_mais_recente"]) > str(agrupado[k]["deposito_mais_recente"]):
-                agrupado[k]["deposito_mais_recente"] = b["deposito_mais_recente"]
-    linhas = sorted(agrupado.values(), key=lambda x: -x["pedidos"])[: max(1, min(limite, 500))]
 
     tem_pf = any((l.get("tipo_pessoa") or "").lower().startswith("pessoa f") for l in linhas)
     r = {
@@ -1172,6 +1232,103 @@ def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
     if tem_pf:
         r["aviso_dado_pessoal"] = _AVISO_PESSOAL
     return r
+
+
+@mcp.tool()
+def inpi_candidatos_vinculo(escritorio: str | None = None, min_clientes_comuns: int = 15,
+                            cobertura_minima: float = 0.6, limite: int = 40) -> dict:
+    """Encontra nomes que provavelmente sao a MESMA banca, para revisao humana.
+
+    USE QUANDO: for conferir um numero de participacao de mercado, ou mapear os
+    agentes e as grafias erradas de um concorrente.
+
+    Combina dois sinais independentes:
+      - similaridade do nome (Jaro-Winkler)
+      - sobreposicao de carteira de clientes
+
+    Como ler o resultado:
+      'digitacao'  nome muito parecido E carteira comum. Alta confianca -- normalmente
+                   e a mesma banca escrita errada.
+      'agente'     nome diferente, carteira comum. Costuma ser advogado ou agente da
+                   casa assinando em nome proprio. EXIGE confirmacao: a sobreposicao
+                   e fraca por natureza. Medido: Orlando de Souza, confirmado como
+                   agente da Clarke Modet, tem apenas 26% de carteira em comum com
+                   ela; Flavia Salim Lopes, 36%. Um corte que pegasse os dois traria
+                   muito ruido junto.
+
+    Isto NAO decide nada. Devolve candidatos com a evidencia; quem confirma e o
+    humano, acrescentando a linha em inpi/referencias/escritorios-apelidos.csv e
+    rodando 'python inpi/ingest.py' de novo.
+    """
+    cond, params = [], []
+    if escritorio:
+        chave = _chave_escritorio(escritorio)
+        cond.append("(p.ea = ? OR p.eb = ?)")
+        params += [chave, chave]
+    where = (" AND " + " AND ".join(cond)) if cond else ""
+
+    linhas = _linhas(
+        f"""WITH carteira AS (
+              SELECT e.chave escritorio, t.chave cliente, count(*) n
+              FROM procuradores pr
+              JOIN escritorios e ON e.original = pr.procurador
+              JOIN depositantes dp ON dp.numero_inpi = pr.numero_inpi
+              JOIN titulares t ON t.original = dp.depositante
+              GROUP BY 1, 2
+            ),
+            tam AS (
+              SELECT escritorio, count(*) clientes, sum(n) processos FROM carteira GROUP BY 1
+            ),
+            pares AS (
+              SELECT a.escritorio ea, b.escritorio eb, count(*) comum
+              FROM carteira a JOIN carteira b
+                ON a.cliente = b.cliente AND a.escritorio < b.escritorio
+              GROUP BY 1, 2 HAVING count(*) >= ?
+            )
+            SELECT p.ea, ta.processos pa, p.eb, tb.processos pb, p.comum,
+                   round(p.comum * 1.0 / least(ta.clientes, tb.clientes), 3) cobertura,
+                   round(jaro_winkler_similarity(p.ea, p.eb), 3) similaridade_nome
+            FROM pares p
+            JOIN tam ta ON ta.escritorio = p.ea
+            JOIN tam tb ON tb.escritorio = p.eb
+            WHERE p.comum * 1.0 / least(ta.clientes, tb.clientes) >= ?{where}
+            ORDER BY similaridade_nome DESC, p.comum DESC
+            LIMIT ?""",
+        [min_clientes_comuns, cobertura_minima] + params + [max(1, min(limite, 200))],
+    )
+
+    for l in linhas:
+        maior, menor = ((l["ea"], l["eb"]) if l["pa"] >= l["pb"] else (l["eb"], l["ea"]))
+        l["provavel_canonico"] = maior
+        l["provavel_variante"] = menor
+        l["hipotese"] = "digitacao" if l["similaridade_nome"] >= 0.85 else "agente"
+        l["linha_para_o_csv"] = (
+            f'{l["provavel_variante"]},{l["provavel_canonico"]},'
+            f'{min(l["pa"], l["pb"])},,,"{l["comum"]} clientes em comum '
+            f'({l["cobertura"]:.0%}), similaridade {l["similaridade_nome"]}"'
+        )
+
+    return {
+        "filtro": {"escritorio": escritorio, "min_clientes_comuns": min_clientes_comuns,
+                   "cobertura_minima": cobertura_minima},
+        "candidatos": len(linhas),
+        "por_hipotese": {
+            "digitacao": sum(1 for l in linhas if l["hipotese"] == "digitacao"),
+            "agente": sum(1 for l in linhas if l["hipotese"] == "agente"),
+        },
+        "resultados": linhas,
+        "como_aplicar": (
+            "Confira cada linha. Para as que forem a mesma banca, copie "
+            "'linha_para_o_csv' para inpi/referencias/escritorios-apelidos.csv, "
+            "preencha revisado_por e revisado_em, e rode 'python inpi/ingest.py'."
+        ),
+        "aviso": (
+            "Candidatos, nao conclusoes. A sobreposicao de carteira NAO detecta agente "
+            "de forma confiavel -- agentes da mesma casa atendem clientes diferentes. "
+            "Baixar 'cobertura_minima' traz mais agentes verdadeiros e muito mais falso "
+            "positivo junto."
+        ),
+    }
 
 
 # NAO EXISTE inpi_trocas_de_escritorio, e a ausencia e deliberada.

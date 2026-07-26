@@ -387,6 +387,89 @@ def test_prospeccao_exclui_quem_ja_e_cliente_e_marca_pessoa_fisica():
 
 
 @precisa_banco
+def test_titular_agrupa_pela_raiz_do_cnpj():
+    """A Petrobras tem 60 grafias e documentos diferentes entre matriz e filial.
+    A raiz de 8 digitos e identidade juridica, nao heuristica de string."""
+    r = m.inpi_titular_resolver("petrobras")
+    assert r["chave_principal"] == "CNPJ:33000167"
+    principal = r["chaves_encontradas"][0]
+    assert principal["grafias"] > 40, "o agrupamento por CNPJ regrediu"
+    assert principal["processos"] > 1800
+
+
+@precisa_banco
+def test_titular_herda_cnpj_pelo_nome_normalizado():
+    """65% dos depositantes vem como 'estrangeiro' e 10% como 'N/D'. Sem herdar o CNPJ
+    pelo nome, a Petrobras partia em 1.743 + 104 processos.
+
+    Nao exige perfeicao: sobra um residuo de grafias cujo nome normalizado nao coincide
+    com nenhuma que tenha CNPJ ('PETROLEO BRASILEIRO SA [BR]' -> 'PETROLEO BRASILEIRO',
+    que nao bate com 'PETROLEO BRASILEIRO PETROBRAS'). O que se cobra e que o residuo
+    seja marginal."""
+    linhas = m._linhas(
+        """SELECT t.chave, count(DISTINCT dp.numero_inpi) n
+           FROM depositantes dp JOIN titulares t ON t.original = dp.depositante
+           WHERE dp.depositante ILIKE '%PETROLEO BRASILEIRO%'
+              OR dp.depositante ILIKE '%PETRÓLEO BRASILEIRO%'
+           GROUP BY 1"""
+    )
+    por_chave = {l["chave"]: l["n"] for l in linhas}
+    assert por_chave.get("CNPJ:33000167", 0) > 1800
+    residuo = sum(n for k, n in por_chave.items() if not k.startswith("CNPJ:"))
+    total = sum(por_chave.values())
+    assert residuo / total < 0.02, f"residuo alto: {residuo} de {total}"
+
+
+def _chaves_de(nome: str) -> set[str]:
+    return {
+        r["chave"]
+        for r in m._linhas(
+            """SELECT DISTINCT t.chave FROM depositantes dp
+               JOIN titulares t ON t.original = dp.depositante
+               WHERE dp.depositante ILIKE ?""",
+            [f"%{nome}%"],
+        )
+    }
+
+
+@precisa_banco
+def test_titular_nao_junta_subsidiarias_com_cnpj_proprio():
+    """Transpetro e Petrobras Distribuidora tem raiz propria. Somar so se a
+    pergunta for sobre o grupo -- e isso e decisao de quem pergunta."""
+    chaves = _chaves_de("petrobras")
+    assert "CNPJ:33000167" in chaves and "CNPJ:02709449" in chaves
+
+
+@precisa_banco
+def test_escritorio_soma_os_agentes_da_casa():
+    """Orlando de Souza e Flavia Salim Lopes sao agentes da Clarke Modet, confirmado
+    pelo usuario em 2026-07-26. Sem soma-los, a participacao de mercado saia como
+    25.760 em vez de 44.610 -- 4o lugar em vez de 3o."""
+    r = m.inpi_escritorio_resolver("Clarke Modet")
+    assert r["processos"] > 44_000
+    assert r["chave"] == "CLARKE MODET"
+
+
+@precisa_banco
+def test_candidatos_separam_digitacao_de_agente():
+    r = m.inpi_candidatos_vinculo(cobertura_minima=0.7, limite=50)
+    assert r["candidatos"] > 0
+    for c in r["resultados"]:
+        esperado = "digitacao" if c["similaridade_nome"] >= 0.85 else "agente"
+        assert c["hipotese"] == esperado
+        assert "linha_para_o_csv" in c
+
+
+@precisa_banco
+def test_candidatos_ja_resolvidos_somem_do_resultado():
+    """O ciclo tem que convergir: aplicar um apelido remove aquele candidato."""
+    r = m.inpi_candidatos_vinculo(escritorio="Dannemann Siemsen",
+                                  cobertura_minima=0.85, limite=30)
+    variantes = {c["provavel_variante"] for c in r["resultados"]}
+    assert "DANNEMANN SIEMEN BIGLER IPANEMA MOREIRA" not in variantes
+
+
+@precisa_banco
 def test_prazo_de_exame_art_33_aparece_e_some_na_hora_certa():
     r = m.inpi_prazos_carteira(numeros=["102022010731"], de="2022-06-01",
                                ate="2026-12-31", tipos=["exame"])

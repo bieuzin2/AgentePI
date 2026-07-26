@@ -83,18 +83,97 @@ def baixar() -> int:
     return 0
 
 
+# Sufixos societarios de titular. Lista diferente da de escritorio: aqui entram as
+# formas estrangeiras (GMBH, LLC, KABUSHIKI KAISHA...), que sao a maioria -- 65% dos
+# depositantes tem documento 'estrangeiro'.
+_SUFIXOS_TITULAR = (
+    "S A|SA|LTDA|LTD|LIMITADA|EIRELI|EPP|ME|INC|CORP|CORPORATION|CO|COMPANY|"
+    "GMBH|AG|KG|MBH|BV|NV|SE|SAS|SARL|SPA|SRL|PLC|LLC|LP|AB|AS|OY|OYJ|"
+    "PTY|PTE|KK|KABUSHIKI KAISHA|SOCIEDADE ANONIMA|INDUSTRIA E COMERCIO|"
+    "PARTICIPACOES|EMPREENDIMENTOS|DO BRASIL|BRASIL|SS"
+)
+
+# Normalizacao de nome em SQL puro. Roda vetorizada no motor: 362 mil nomes em 1,1 s.
+# Em Python levava minutos e nao terminava -- foi o que derrubou a primeira tentativa.
+# O '[BR]' no fim e sufixo de pais do formato epodoc, que o EPO acrescenta e o INPI as
+# vezes copia. Sai antes de tudo: se virasse ' BR ', 'PETROLEO BRASILEIRO SA [BR]'
+# fecharia numa chave propria e nao encontraria a Petrobras.
+_NOME_NORM = f"""
+  nullif(trim(regexp_replace(
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(upper(strip_accents({{col}})), '\\[[A-Z]{{{{2}}}}\\]', ' ', 'g'),
+        '[^A-Z0-9 ]', ' ', 'g'),
+      '(^| )({_SUFIXOS_TITULAR})( |$)', ' ', 'g'),
+    ' +', ' ', 'g')), '')
+"""
+
+
+def _materializa_titulares(con) -> None:
+    """Chave canonica de titular, em tres camadas.
+
+    O problema: 362.483 grafias de depositante. So a Petrobras aparece em 66 formas e
+    com 8 documentos diferentes (matriz, filiais e 'N/D'). Sem agrupar, toda estatistica
+    de titular esta errada.
+
+    As camadas, em ordem de confiabilidade:
+
+    1. RAIZ DO CNPJ (8 primeiros digitos). Identidade juridica, nao heuristica de
+       string. Junta matriz e filial: Petrobras 33000167000101 e 33000167081942 caem
+       na mesma raiz 33000167. Vale para 10% das linhas -- pessoa juridica brasileira.
+
+    2. HERANCA DO CNPJ PELO NOME. 65% dos depositantes tem documento 'estrangeiro' e
+       10% tem 'N/D'. Quando o nome normalizado coincide com o de um registro que TEM
+       CNPJ, herda a raiz. E isto que junta os 104 processos da Petrobras marcados
+       'N/D' aos 1.743 que trazem o CNPJ.
+
+    3. NOME NORMALIZADO. Para quem nao tem documento nem homonimo com documento --
+       tipicamente estrangeiro. Junta W.R. Grace (104 grafias), Air Liquide (93),
+       DuPont (78) e Samsung (60).
+    """
+    t0 = time.time()
+    raiz = """CASE WHEN tipopessoadepositante = 'pessoa jurídica'
+                    AND length(cgccpfdepositante) >= 8
+                    AND cgccpfdepositante NOT LIKE '%*%'
+                   THEN 'CNPJ:' || substr(cgccpfdepositante, 1, 8) END"""
+    nome = _NOME_NORM.format(col="depositante")
+
+    con.execute("DROP TABLE IF EXISTS titulares")
+    con.execute(f"""
+      CREATE TABLE titulares AS
+      WITH base AS (
+        SELECT DISTINCT depositante AS original, {raiz} AS raiz_cnpj, {nome} AS nome_norm
+        FROM depositantes WHERE depositante IS NOT NULL
+      ),
+      -- camada 2: para cada nome normalizado, a raiz de CNPJ mais frequente
+      heranca AS (
+        SELECT nome_norm, arg_max(raiz_cnpj, n) AS raiz_herdada FROM (
+          SELECT nome_norm, raiz_cnpj, count(*) n FROM base
+          WHERE raiz_cnpj IS NOT NULL AND nome_norm IS NOT NULL GROUP BY 1, 2
+        ) GROUP BY 1
+      )
+      SELECT b.original,
+             coalesce(b.raiz_cnpj, h.raiz_herdada, b.nome_norm, upper(b.original)) AS chave,
+             b.raiz_cnpj IS NOT NULL AS tem_cnpj
+      FROM base b LEFT JOIN heranca h USING (nome_norm)
+    """)
+    n, ch = con.execute(
+        "SELECT count(*), count(DISTINCT chave) FROM titulares"
+    ).fetchone()
+    print(f"  titulares      {n:>12,} grafias -> {ch:,} chaves "
+          f"(-{1 - ch / max(n, 1):.0%})   {time.time() - t0:5.1f}s", flush=True)
+
+
 def _materializa_nomes(con) -> None:
     """Cria a tabela de chaves normalizadas de ESCRITORIO.
 
-    So escritorio, de proposito. Sao 17.521 grafias de procurador para ~10 mil bancas
-    reais -- a Clarke Modet sozinha aparece em 42 formas, e sem agrupar toda
-    estatistica de mercado sai errada e a carteira sai fragmentada. Materializar aqui
-    custa ~75 s e vale.
+    Sao 17.521 grafias de procurador para ~10 mil bancas reais -- a Clarke Modet
+    sozinha aparece em dezenas de formas, e sem agrupar toda estatistica de mercado
+    sai errada e a carteira sai fragmentada.
 
-    Titular NAO e materializado: sao ~500 mil nomes distintos, o unnest de uma lista
-    desse tamanho nao terminava em 5+ minutos, e o ganho e menor -- quem pergunta por
-    "Petrobras" e atendido por ILIKE. Onde o agrupamento importa (prospeccao), a
-    normalizacao roda em Python sobre as poucas dezenas de linhas do resultado.
+    Aqui a normalizacao roda em Python (e nao em SQL como a de titular) porque
+    consulta escritorios-apelidos.csv, que mapeia erro de digitacao a mao. Sao poucos
+    nomes distintos, entao o custo e aceitavel.
     """
     import sys
     sys.path.insert(0, str(RAIZ))
@@ -171,6 +250,7 @@ def main() -> int:
     # (construcao de ART sobre VARCHAR); sem eles, termina em ~2 min e as consultas do
     # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
     _materializa_nomes(con)
+    _materializa_titulares(con)
 
     print(f"\nBanco: {BANCO}  ({BANCO.stat().st_size/1e6:.0f} MB)")
     con.close()
