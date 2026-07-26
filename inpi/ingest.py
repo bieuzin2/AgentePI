@@ -34,6 +34,49 @@ TABELAS = {
 }
 
 
+def _materializa_nomes(con) -> None:
+    """Cria a tabela de chaves normalizadas de ESCRITORIO.
+
+    So escritorio, de proposito. Sao 17.521 grafias de procurador para ~10 mil bancas
+    reais -- a Clarke Modet sozinha aparece em 42 formas, e sem agrupar toda
+    estatistica de mercado sai errada e a carteira sai fragmentada. Materializar aqui
+    custa ~75 s e vale.
+
+    Titular NAO e materializado: sao ~500 mil nomes distintos, o unnest de uma lista
+    desse tamanho nao terminava em 5+ minutos, e o ganho e menor -- quem pergunta por
+    "Petrobras" e atendido por ILIKE. Onde o agrupamento importa (prospeccao), a
+    normalizacao roda em Python sobre as poucas dezenas de linhas do resultado.
+    """
+    import sys
+    sys.path.insert(0, str(RAIZ))
+    from escritorios import normalizar
+
+    for tabela, coluna, nova in (
+        ("procuradores", "procurador", "escritorios"),
+    ):
+        t0 = time.time()
+        distintos = [
+            r[0] for r in con.execute(
+                f"SELECT DISTINCT {coluna} FROM {tabela} WHERE {coluna} IS NOT NULL"
+            ).fetchall()
+        ]
+        chaves = [normalizar(n) for n in distintos]
+        con.execute(f"DROP TABLE IF EXISTS {nova}")
+        # Uma query com dois arrays, nao executemany. Com ~500 mil titulares o
+        # INSERT linha a linha nao terminava: o WAL crescia 2 MB/min e a carga
+        # passava de uma hora. unnest resolve em segundos.
+        con.execute(
+            f"""CREATE TABLE {nova} AS
+                SELECT unnest(?::VARCHAR[]) AS original, unnest(?::VARCHAR[]) AS chave""",
+            [distintos, chaves],
+        )
+        pares = distintos
+        n_chaves = con.execute(f"SELECT count(DISTINCT chave) FROM {nova}").fetchone()[0]
+        print(f"  {nova:<14} {len(pares):>12,} grafias -> {n_chaves:,} chaves "
+              f"(-{1 - n_chaves / max(len(pares), 1):.0%})   {time.time()-t0:5.1f}s",
+              flush=True)
+
+
 def main() -> int:
     faltando = [f for f in TABELAS.values() if not (BRUTO / f).exists()]
     if faltando:
@@ -65,13 +108,14 @@ def main() -> int:
             f"SELECT count(*) FROM read_csv_auto('{caminho}', header=true, sample_size=-1)"
         ).fetchone()[0]
         dup = f"  (-{bruto - n:,} duplicatas, {bruto / n:.2f}x)" if bruto > n else ""
-        print(f"  {tabela:<14} {n:>12,} linhas   {time.time()-t0:5.1f}s{dup}")
+        print(f"  {tabela:<14} {n:>12,} linhas   {time.time()-t0:5.1f}s{dup}", flush=True)
 
-    # Indices que sustentam as consultas do servidor MCP. numero_inpi e a chave
-    # natural do processo e aparece em toda pergunta de acompanhamento.
-    for tabela in ("despachos", "biblio", "conteudo", "depositantes", "ipc"):
-        con.execute(f"CREATE INDEX IF NOT EXISTS ix_{tabela}_num ON {tabela}(numero_inpi)")
-    con.execute("CREATE INDEX IF NOT EXISTS ix_despachos_data ON despachos(data_rpi)")
+    # Sem CREATE INDEX de proposito. DuckDB e colunar: um scan filtrado de 5,3 milhoes
+    # de linhas custa milissegundos, e o indice ART so ajuda em point lookup. Medido:
+    # com indices em 8 tabelas a carga travava por mais de 20 minutos a 100% de CPU
+    # (construcao de ART sobre VARCHAR); sem eles, termina em ~2 min e as consultas do
+    # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
+    _materializa_nomes(con)
 
     print(f"\nBanco: {BANCO}  ({BANCO.stat().st_size/1e6:.0f} MB)")
     con.close()

@@ -276,6 +276,69 @@ def test_novidades_recusa_data_em_formato_errado():
     assert r.get("erro") is True
 
 
+# --- C3: carteira, mercado e prospeccao ------------------------------------
+
+import escritorios as esc  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "nome",
+    [
+        "CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA.",
+        "Clarke  Modet do Brasil LTDA",
+        ":CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA",  # lixo no inicio
+        "CLARKE MODET DO BRASIL LTDA",
+        "Clarke, Modet & Co.",       # via escritorios-apelidos.csv
+        "CLARK MODET",               # erro de digitacao, via apelidos
+        "Clarke Modet do Brasils Ltda",
+    ],
+)
+def test_normalizacao_agrupa_as_grafias_do_escritorio(nome):
+    """Regressao: a Clarke Modet aparece em dezenas de grafias. Sem agrupar, a
+    carteira sai fragmentada e a estatistica de mercado sai errada."""
+    assert esc.normalizar(nome) == "CLARKE MODET"
+
+
+def test_normalizacao_nao_junta_escritorios_diferentes():
+    assert esc.normalizar("John David Clarke") != "CLARKE MODET"
+    assert esc.normalizar("KASZNAR LEONARDOS") != esc.normalizar("LUIZ LEONARDOS")
+
+
+@precisa_banco
+def test_resolver_escritorio_mostra_as_grafias_agrupadas():
+    r = m.inpi_escritorio_resolver("Clarke Modet")
+    assert r["chave"] == "CLARKE MODET"
+    assert r["grafias_agrupadas"] > 40, "o agrupamento regrediu"
+    assert r["processos"] > 25_000
+
+
+@precisa_banco
+def test_carteira_filtra_por_cliente():
+    todos = m.inpi_carteira("Clarke Modet", apenas_vivos=False, limite=1)
+    petro = m.inpi_carteira("Clarke Modet", cliente="petrobras",
+                            apenas_vivos=False, limite=1)
+    assert 0 < petro["total"] < todos["total"]
+
+
+@precisa_banco
+def test_mercado_avisa_sobre_agente_pessoa_fisica():
+    """O INPI registra o agente PF no lugar da banca: 'ORLANDO DE SOUZA' tem 11.972
+    processos e 4 em comum com a Clarke Modet. Sem o aviso, o ranking engana."""
+    r = m.inpi_mercado(top=5)
+    assert r["ranking"][0]["escritorio"].startswith("DANNEMANN")
+    assert "aviso_agente_pessoa_fisica" in r
+
+
+@precisa_banco
+def test_prospeccao_exclui_quem_ja_e_cliente_e_marca_pessoa_fisica():
+    r = m.inpi_prospeccao(excluir_escritorio="Clarke Modet", ipc="C08",
+                          min_pedidos=10, desde="2020-01-01", limite=20)
+    chaves = {t["titular_chave"] for t in r["titulares"]}
+    assert chaves, "prospeccao vazia"
+    if any((t.get("tipo_pessoa") or "").lower().startswith("pessoa f") for t in r["titulares"]):
+        assert "aviso_dado_pessoal" in r, "PF na lista sem o rotulo da LGPD"
+
+
 @precisa_banco
 def test_prazo_de_exame_art_33_aparece_e_some_na_hora_certa():
     r = m.inpi_prazos_carteira(numeros=["102022010731"], de="2022-06-01",

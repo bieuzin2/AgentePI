@@ -35,6 +35,7 @@ from mcp.server.fastmcp import FastMCP
 RAIZ_MOD = Path(__file__).resolve().parent
 sys.path.insert(0, str(RAIZ_MOD))
 import anuidades as anu
+import escritorios as esc
 import jurisdicoes as jur
 
 RAIZ = Path(__file__).resolve().parent
@@ -910,6 +911,265 @@ def inpi_novidades(desde: str, numeros: list[str] | None = None,
             "efeito, e so o despacho seguinte revela isso."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Carteira, mercado e prospeccao
+# ---------------------------------------------------------------------------
+
+_AVISO_PESSOAL = (
+    "Esta lista contem PESSOA FISICA. O INPI ja publica o CPF mascarado, mas nome e "
+    "endereco sao dado pessoal: uso comercial exige base legal propria (LGPD art. 7o). "
+    "Ver docs/lgpd.md. Pessoa juridica nao tem essa restricao."
+)
+
+
+def _chave_escritorio(nome: str) -> str:
+    """Resolve o nome digitado para a chave canonica de agrupamento."""
+    return esc.normalizar(nome)
+
+
+@mcp.tool()
+def inpi_escritorio_resolver(nome: str) -> dict:
+    """Mostra em que chave um nome de escritorio cai, e quais grafias ela agrupa.
+
+    USE QUANDO: antes de confiar em qualquer numero de carteira ou de mercado. A base
+    tem 17.521 grafias de procurador para ~10 mil escritorios reais -- a Clarke Modet
+    sozinha aparece em 42 formas. Se a chave errada for usada, todo o resto erra junto.
+    """
+    chave = _chave_escritorio(nome)
+    grafias = _linhas(
+        """SELECT e.original, count(DISTINCT p.numero_inpi) n
+           FROM escritorios e JOIN procuradores p ON p.procurador = e.original
+           WHERE e.chave = ? GROUP BY 1 ORDER BY n DESC""",
+        [chave],
+    )
+    parecidas = _linhas(
+        """SELECT DISTINCT chave FROM escritorios
+           WHERE chave ILIKE ? AND chave <> ? LIMIT 15""",
+        [f"%{chave.split()[0]}%" if chave else "%", chave],
+    )
+    return {
+        "nome_consultado": nome,
+        "chave": chave,
+        "processos": sum(g["n"] for g in grafias),
+        "grafias_agrupadas": len(grafias),
+        "grafias": grafias[:30],
+        "chaves_parecidas_nao_agrupadas": [p["chave"] for p in parecidas],
+        "nota": (
+            "'chaves_parecidas_nao_agrupadas' sao candidatas a erro de digitacao que a "
+            "normalizacao nao une (ex.: 'CLARK MODET'). Se alguma for a mesma empresa, "
+            "acrescente em inpi/referencias/escritorios-apelidos.csv e reingira."
+        ),
+    }
+
+
+@mcp.tool()
+def inpi_carteira(escritorio: str, cliente: str | None = None,
+                  apenas_vivos: bool = True, limite: int = 200) -> dict:
+    """Carteira de um escritorio, opcionalmente filtrada por cliente.
+
+    USE QUANDO: perguntarem "quantos casos temos", "quais casos do cliente X",
+    "nossa carteira em determinada area".
+
+    Agrupa as grafias do nome automaticamente. Confira com inpi_escritorio_resolver
+    se o numero parecer estranho.
+    """
+    chave = _chave_escritorio(escritorio)
+    params: list = [chave]
+    filtro_cli = ""
+    if cliente:
+        filtro_cli = " AND dp.depositante ILIKE ?"
+        params.append(f"%{cliente.strip()}%")
+
+    linhas = _linhas(
+        f"""WITH alvo AS (
+              SELECT DISTINCT p.numero_inpi
+              FROM procuradores p JOIN escritorios e ON e.original = p.procurador
+              WHERE e.chave = ?
+            )
+            SELECT a.numero_inpi,
+                   any_value(dp.depositante) titular,
+                   any_value(c.titulo) titulo,
+                   any_value(b.data_deposito) data_deposito,
+                   max(d.data_rpi) ultimo_despacho,
+                   count(DISTINCT d.codigo_despacho) n_despachos
+            FROM alvo a
+            LEFT JOIN depositantes dp USING (numero_inpi)
+            LEFT JOIN conteudo c USING (numero_inpi)
+            LEFT JOIN biblio b USING (numero_inpi)
+            LEFT JOIN despachos d USING (numero_inpi)
+            WHERE 1=1{filtro_cli}
+            GROUP BY a.numero_inpi
+            ORDER BY ultimo_despacho DESC NULLS LAST""",
+        params,
+    )
+
+    if apenas_vivos:
+        estados, _ = _carregar_lote(numeros=[l["numero_inpi"] for l in linhas][:5000])
+        linhas = [
+            l for l in linhas
+            if not (estados.get(l["numero_inpi"], {}).get("encerrado_em"))
+        ]
+
+    return {
+        "escritorio": escritorio,
+        "chave": chave,
+        "cliente": cliente,
+        "apenas_vivos": apenas_vivos,
+        "total": len(linhas),
+        "truncado": len(linhas) > limite,
+        "casos": linhas[:limite],
+    }
+
+
+@mcp.tool()
+def inpi_mercado(ipc: str | None = None, desde: str | None = None,
+                 top: int = 20) -> dict:
+    """Ranking de escritorios por volume de processos. Inteligencia competitiva.
+
+    USE QUANDO: perguntarem participacao de mercado, quem lidera uma area tecnica,
+    ou como a nossa posicao evoluiu.
+
+    Args:
+        ipc: prefixo de classificacao (ex.: 'C08' para polimeros, 'A61K' para farma).
+        desde: 'AAAA-MM-DD' sobre a data de deposito.
+        top: quantos escritorios listar.
+    """
+    cond, params = [], []
+    if ipc:
+        cond.append("i.simbolo LIKE ?")
+        params.append(f"{ipc.strip()}%")
+    if desde:
+        cond.append("b.data_deposito >= ?")
+        params.append(desde)
+    where = (" WHERE " + " AND ".join(cond)) if cond else ""
+    params.append(max(1, min(top, 100)))
+
+    linhas = _linhas(
+        f"""SELECT e.chave escritorio, count(DISTINCT p.numero_inpi) processos
+            FROM procuradores p
+            JOIN escritorios e ON e.original = p.procurador
+            LEFT JOIN ipc i USING (numero_inpi)
+            LEFT JOIN biblio b USING (numero_inpi)
+            {where}
+            GROUP BY 1 ORDER BY processos DESC LIMIT ?""",
+        params,
+    )
+    total = sum(l["processos"] for l in linhas)
+    for l in linhas:
+        l["participacao_no_top"] = round(l["processos"] / total * 100, 1) if total else 0
+    return {
+        "filtro": {"ipc": ipc, "desde": desde},
+        "ranking": linhas,
+        "nota": (
+            "'participacao_no_top' e sobre a soma dos listados, nao sobre o mercado "
+            "inteiro."
+        ),
+        "aviso_agente_pessoa_fisica": (
+            "ATENCAO ao ler este ranking: quando o INPI registra o AGENTE pessoa fisica, "
+            "ele o faz NO LUGAR da banca, nao junto. Medido: 'ORLANDO DE SOUZA' tem "
+            "11.972 processos e apenas 4 em comum com 'CLARKE MODET'. Logo, bancas cujos "
+            "agentes assinam em nome proprio aparecem subestimadas, e nomes de pessoa "
+            "fisica aparecem no ranking como se fossem escritorios. Antes de citar "
+            "participacao de mercado, verifique com inpi_escritorio_resolver quais nomes "
+            "de agente pertencem a cada banca e acrescente-os a "
+            "inpi/referencias/escritorios-apelidos.csv."
+        ),
+    }
+
+
+@mcp.tool()
+def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
+                    uf: str | None = None, min_pedidos: int = 5,
+                    desde: str | None = None, limite: int = 50) -> dict:
+    """Titulares com carteira relevante que NAO sao representados por nos.
+
+    USE QUANDO: for prospectar. Lista depositantes ativos, ordenados por volume,
+    excluindo quem ja e cliente do escritorio informado.
+
+    Args:
+        excluir_escritorio: o nosso nome -- quem ja representamos sai da lista.
+        ipc: prefixo de classificacao para focar numa area tecnica.
+        uf: sigla do estado do depositante.
+        min_pedidos: volume minimo para entrar na lista.
+        desde: 'AAAA-MM-DD' sobre a data de deposito, para pegar quem esta ativo.
+    """
+    chave_nossa = _chave_escritorio(excluir_escritorio)
+    cond, params = ["dp.depositante IS NOT NULL"], []
+    if ipc:
+        cond.append("i.simbolo LIKE ?")
+        params.append(f"{ipc.strip()}%")
+    if uf:
+        cond.append("dp.estado = ?")
+        params.append(uf.strip().upper())
+    if desde:
+        cond.append("b.data_deposito >= ?")
+        params.append(desde)
+    params += [chave_nossa, min_pedidos]
+
+    # Agrupa pelo nome cru no SQL e normaliza depois, em Python, sobre as poucas
+    # centenas de linhas do resultado -- materializar as ~500 mil chaves de titular
+    # na carga nao termina em tempo util, e aqui o volume e trivial.
+    brutos = _linhas(
+        f"""SELECT dp.depositante titular,
+                   any_value(dp.pais) pais, any_value(dp.estado) uf,
+                   any_value(dp.tipopessoadepositante) tipo_pessoa,
+                   count(DISTINCT dp.numero_inpi) pedidos,
+                   max(b.data_deposito) deposito_mais_recente
+            FROM depositantes dp
+            LEFT JOIN ipc i USING (numero_inpi)
+            LEFT JOIN biblio b USING (numero_inpi)
+            WHERE {' AND '.join(cond)}
+              AND dp.numero_inpi NOT IN (
+                    SELECT p.numero_inpi FROM procuradores p
+                    JOIN escritorios e ON e.original = p.procurador
+                    WHERE e.chave = ?
+              )
+            GROUP BY dp.depositante
+            HAVING count(DISTINCT dp.numero_inpi) >= ?
+            ORDER BY pedidos DESC LIMIT 3000""",
+        params,
+    )
+
+    agrupado: dict[str, dict] = {}
+    for b in brutos:
+        k = esc.normalizar(b["titular"])
+        if k not in agrupado:
+            agrupado[k] = {**b, "titular_chave": k, "grafias": 1}
+        else:
+            agrupado[k]["pedidos"] += b["pedidos"]
+            agrupado[k]["grafias"] += 1
+            if str(b["deposito_mais_recente"]) > str(agrupado[k]["deposito_mais_recente"]):
+                agrupado[k]["deposito_mais_recente"] = b["deposito_mais_recente"]
+    linhas = sorted(agrupado.values(), key=lambda x: -x["pedidos"])[: max(1, min(limite, 500))]
+
+    tem_pf = any((l.get("tipo_pessoa") or "").lower().startswith("pessoa f") for l in linhas)
+    r = {
+        "excluido": {"escritorio": excluir_escritorio, "chave": chave_nossa},
+        "filtro": {"ipc": ipc, "uf": uf, "min_pedidos": min_pedidos, "desde": desde},
+        "encontrados": len(linhas),
+        "titulares": linhas,
+        "nota": (
+            "Ausencia da nossa chave significa que nao ha registro de representacao "
+            "NESTA base. O titular pode ser cliente por outra via (marcas, contratos) "
+            "ou ter mudado de procurador sem publicacao. Confira antes de abordar."
+        ),
+    }
+    if tem_pf:
+        r["aviso_dado_pessoal"] = _AVISO_PESSOAL
+    return r
+
+
+# NAO EXISTE inpi_trocas_de_escritorio, e a ausencia e deliberada.
+#
+# O plano previa detectar perda e ganho de clientes por procuradores.
+# data_inicio_procurador. Medido: apenas 262 processos em 775.370 tem mais de um
+# escritorio distinto, e nesses poucos os dois registros trazem a MESMA data -- sao
+# a banca e o agente pessoa fisica anotados juntos, nao uma troca ao longo do tempo.
+# A tabela guarda a representacao vigente, nao a serie historica. Uma tool aqui
+# devolveria sempre zero, o que e pior que nao existir: passa a impressao de que
+# nenhum cliente saiu.
 
 
 if __name__ == "__main__":
