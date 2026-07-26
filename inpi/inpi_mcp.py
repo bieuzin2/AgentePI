@@ -1235,6 +1235,163 @@ def inpi_prospeccao(excluir_escritorio: str, ipc: str | None = None,
 
 
 @mcp.tool()
+def inpi_serie_mercado(escritorios: list[str] | None = None, ipc: str | None = None,
+                       de: str = "1990", ate: str = "2026",
+                       granularidade: str = "ano", top: int = 8) -> dict:
+    """Evolucao do mercado no tempo: quantos pedidos cada escritorio recebeu por periodo.
+
+    USE QUANDO: perguntarem "qual escritorio mais depositou na historia", "como
+    evoluiu nossa participacao", "quem cresceu e quem encolheu".
+
+    Conta pela DATA DE DEPOSITO do pedido, nao pela data do vinculo -- e a leitura
+    natural de "depositou em tal ano".
+
+    Args:
+        escritorios: nomes a comparar. Omita para pegar os 'top' maiores do periodo.
+        ipc: prefixo de classificacao, para recortar por area tecnica.
+        de/ate: ano inicial e final.
+        granularidade: 'ano' ou 'decada'.
+    """
+    if granularidade not in ("ano", "decada"):
+        return {"erro": True, "mensagem": "granularidade deve ser 'ano' ou 'decada'."}
+    periodo = ("year(b.data_deposito)" if granularidade == "ano"
+               else "(year(b.data_deposito) // 10) * 10")
+
+    cond = ["b.data_deposito IS NOT NULL",
+            f"year(b.data_deposito) BETWEEN {int(de)} AND {int(ate)}"]
+    params: list = []
+    if ipc:
+        cond.append("i.simbolo LIKE ?")
+        params.append(f"{ipc.strip()}%")
+
+    chaves = [_chave_escritorio(e) for e in escritorios] if escritorios else None
+    if chaves:
+        cond.append("e.chave IN (" + ",".join("?" * len(chaves)) + ")")
+        params += chaves
+    else:
+        # sem lista, pega os maiores do proprio periodo
+        maiores = _linhas(
+            f"""SELECT e.chave FROM procuradores p
+                JOIN escritorios e ON e.original = p.procurador
+                JOIN biblio b USING (numero_inpi)
+                {'LEFT JOIN ipc i USING (numero_inpi)' if ipc else ''}
+                WHERE {' AND '.join(cond)}
+                GROUP BY 1 ORDER BY count(DISTINCT p.numero_inpi) DESC LIMIT ?""",
+            params + [max(1, min(top, 20))],
+        )
+        chaves = [r["chave"] for r in maiores]
+        cond.append("e.chave IN (" + ",".join("?" * len(chaves)) + ")")
+        params += chaves
+
+    linhas = _linhas(
+        f"""SELECT {periodo} AS periodo, e.chave AS escritorio,
+                   count(DISTINCT p.numero_inpi) AS pedidos
+            FROM procuradores p
+            JOIN escritorios e ON e.original = p.procurador
+            JOIN biblio b USING (numero_inpi)
+            {'LEFT JOIN ipc i USING (numero_inpi)' if ipc else ''}
+            WHERE {' AND '.join(cond)}
+            GROUP BY 1, 2 ORDER BY 1, pedidos DESC""",
+        params,
+    )
+    total_hist = _linhas(
+        f"""SELECT e.chave AS escritorio, count(DISTINCT p.numero_inpi) AS total
+            FROM procuradores p
+            JOIN escritorios e ON e.original = p.procurador
+            JOIN biblio b USING (numero_inpi)
+            {'LEFT JOIN ipc i USING (numero_inpi)' if ipc else ''}
+            WHERE {' AND '.join(cond)}
+            GROUP BY 1 ORDER BY total DESC""",
+        params,
+    )
+    return {
+        "filtro": {"ipc": ipc, "de": de, "ate": ate, "granularidade": granularidade},
+        "total_no_periodo": total_hist,
+        "serie": linhas,
+        "nota": (
+            "Contado por data de deposito do pedido. Um pedido antigo que trocou de "
+            "procurador aparece no ano do DEPOSITO, sob o escritorio ATUAL -- a base "
+            "guarda a representacao vigente, nao a da epoca. Para grandes carteiras "
+            "isso desloca volume dos anos antigos para quem representa hoje."
+        ),
+    }
+
+
+@mcp.tool()
+def inpi_movimentacao_escritorio(escritorio: str | None = None, de: str = "2000",
+                                 ate: str = "2026", dias_carencia: int = 180) -> dict:
+    """Quando processos ja existentes passaram a ser representados por um escritorio.
+
+    USE QUANDO: perguntarem "em que epoca houve mais mudanca de escritorio",
+    "quantos processos entraram na nossa carteira vindos de outra banca".
+
+    O sinal e o vinculo de procurador que comeca bem depois do deposito: 36% dos
+    774.026 vinculos (282.408) sao assim. Antes da carencia, e o procurador
+    original do deposito.
+
+    ⚠️ LIMITE QUE NAO TEM COMO CONTORNAR: a base diz para ONDE o processo foi, nunca
+    de ONDE veio. Apenas 248 processos em 774.026 registram mais de um escritorio --
+    a tabela guarda a representacao vigente, nao a serie historica. Portanto
+    "quantos vieram da Dannemann para a Clarke" NAO e respondivel, e nenhum numero
+    aqui deve ser lido como tal.
+
+    Args:
+        escritorio: nome. Omita para ver o mercado inteiro.
+        dias_carencia: margem entre deposito e vinculo para considerar troca.
+    """
+    cond = [
+        "p.data_inicio_procurador IS NOT NULL",
+        "b.data_deposito IS NOT NULL",
+        f"p.data_inicio_procurador > b.data_deposito + INTERVAL {int(dias_carencia)} DAY",
+        f"year(p.data_inicio_procurador) BETWEEN {int(de)} AND {int(ate)}",
+    ]
+    params: list = []
+    if escritorio:
+        cond.append("e.chave = ?")
+        params.append(_chave_escritorio(escritorio))
+
+    serie = _linhas(
+        f"""SELECT year(p.data_inicio_procurador) AS ano,
+                   count(DISTINCT p.numero_inpi) AS entradas
+            FROM procuradores p
+            JOIN escritorios e ON e.original = p.procurador
+            JOIN biblio b USING (numero_inpi)
+            WHERE {' AND '.join(cond)}
+            GROUP BY 1 ORDER BY 1""",
+        params,
+    )
+    top = _linhas(
+        f"""SELECT e.chave AS escritorio, count(DISTINCT p.numero_inpi) AS entradas
+            FROM procuradores p
+            JOIN escritorios e ON e.original = p.procurador
+            JOIN biblio b USING (numero_inpi)
+            WHERE {' AND '.join(cond)}
+            GROUP BY 1 ORDER BY entradas DESC LIMIT 12""",
+        params,
+    )
+    pico = max(serie, key=lambda x: x["entradas"]) if serie else None
+    return {
+        "filtro": {"escritorio": escritorio, "de": de, "ate": ate,
+                   "dias_carencia": dias_carencia},
+        "total_entradas": sum(s["entradas"] for s in serie),
+        "ano_de_pico": pico,
+        "serie_por_ano": serie,
+        "por_escritorio": top,
+        "limite_conhecido": (
+            "Isto conta ENTRADAS, nunca origens. A base nao registra de qual escritorio "
+            "o processo veio -- so 248 processos em 774.026 tem mais de um escritorio "
+            "gravado. Pergunta do tipo 'quantos vieram da banca X para a banca Y' nao "
+            "tem resposta nesta base, em nenhuma agregacao."
+        ),
+        "nota": (
+            f"Considera troca o vinculo iniciado mais de {dias_carencia} dias apos o "
+            "deposito. Margem menor pega regularizacao de procuracao do proprio "
+            "deposito como se fosse troca; maior perde trocas rapidas."
+        ),
+    }
+
+
+@mcp.tool()
 def inpi_conflitos_identidade(escritorio: str | None = None, limite: int = 30) -> dict:
     """Onde o NOME e o DOCUMENTO do procurador discordam. Base para revisao humana.
 
