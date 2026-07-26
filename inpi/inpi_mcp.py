@@ -1291,8 +1291,35 @@ def inpi_conflitos_identidade(escritorio: str | None = None, limite: int = 30) -
                 f'similaridade {l["sim_nome"]}"'
             )
 
-    # Evidencia: quem sao os clientes de cada lado do conflito.
+    # Evidencia: quem sao os clientes, e -- mais importante -- se o conflito ainda
+    # importa. Conflito em processo morto nao muda prazo nenhum e nao merece
+    # atencao. Medido no caso Clarke x Dannemann: dos 6.675 processos, 4.734 estao
+    # encerrados, so 9 tiveram despacho desde 2024 e ZERO tem prazo nos proximos 12
+    # meses. A causa e mudanca de escritorio ao longo do tempo -- o INPI atualiza o
+    # registro de procurador sem versionar (existe o despacho 15.35, "Atualizacao de
+    # procurador"), entao nome e documento podem ser de momentos diferentes.
     for l in linhas:
+        viv = _linhas(
+            """WITH alvo AS (
+                 SELECT DISTINCT p.numero_inpi FROM procuradores p
+                 JOIN escritorios e ON e.original = p.procurador
+                 WHERE e.chave = ? AND substr(p.cgccpfprocurador, 1, 8) = ?
+               ),
+               ult AS (SELECT numero_inpi, max(data_rpi) AS ultimo
+                       FROM despachos GROUP BY 1)
+               SELECT count(*) FILTER (WHERE ultimo >= DATE '2024-01-01') AS recentes
+               FROM alvo LEFT JOIN ult USING (numero_inpi)""",
+            [l["nome"], l["doc"]],
+        )
+        ativos = viv[0]["recentes"] if viv else 0
+        l["com_despacho_desde_2024"] = ativos
+        # Proporcao, nao contagem: 9 processos ativos em 6.675 (0,1%) e ruido, mas 9
+        # em 20 seria metade da carteira. O corte binario classificava o caso
+        # Clarke x Dannemann como 'revisar' por causa de 9 casos.
+        l["proporcao_ativa"] = round(ativos / max(l["processos"], 1), 4)
+        l["prioridade"] = (
+            "ignorar_historico" if l["proporcao_ativa"] < 0.02 else "revisar"
+        )
         l["principais_clientes"] = [
             r["depositante"]
             for r in _linhas(
@@ -1333,9 +1360,10 @@ def inpi_conflitos_identidade(escritorio: str | None = None, limite: int = 30) -
             "o que fazer -- a chave ja e o nome."
         ),
         "aviso": (
-            "Nao ha desempate automatico, de proposito. No caso Clarke/Dannemann as "
-            "duas carteiras tem clientes distintos e plausiveis, e escolher por regra "
-            "moveria milhares de processos para o escritorio errado."
+            "Nao ha desempate automatico, de proposito. Mas confira 'prioridade' antes "
+            "de gastar tempo: 'ignorar_historico' significa que nenhum processo daquele "
+            "conflito teve despacho desde 2024 -- e residuo de mudanca de escritorio "
+            "antiga, sem efeito sobre prazo. Concentre-se nos marcados 'revisar'."
         ),
     }
 
