@@ -591,8 +591,15 @@ def _carregar_lote(
         alvo_sql = "SELECT DISTINCT numero_inpi FROM depositantes WHERE depositante ILIKE ?"
         params = [f"%{titular.strip()}%"]
     elif procurador:
-        alvo_sql = "SELECT DISTINCT numero_inpi FROM procuradores WHERE procurador ILIKE ?"
-        params = [f"%{procurador.strip()}%"]
+        # Pela CHAVE normalizada, nao pelo nome cru. Com ILIKE no texto, "Clarke
+        # Modet" trazia 2.796 casos em vez de 44.610: perdia as grafias com espaco
+        # duplo, as variantes do CSV de apelidos e os agentes da casa (Orlando de
+        # Souza, Flavia Salim Lopes). Relatorio de prazo com esse recorte seria pior
+        # que relatorio nenhum.
+        alvo_sql = """SELECT DISTINCT p.numero_inpi FROM procuradores p
+                      JOIN escritorios e ON e.original = p.procurador
+                      WHERE e.chave = ?"""
+        params = [esc.normalizar(procurador)]
     else:
         raise ValueError("Informe numeros, titular ou procurador.")
 

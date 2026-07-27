@@ -262,6 +262,17 @@ def test_carteira_responde_em_lote_nao_caso_a_caso():
 
 
 @precisa_banco
+def test_filtro_por_procurador_usa_a_chave_normalizada():
+    """Regressao cara: _carregar_lote filtrava por 'procurador ILIKE texto', o que
+    trazia 2.796 casos em vez de 44.610 -- perdia grafias com espaco duplo, as
+    variantes do CSV de apelidos e os agentes da casa. O relatorio de prazos saiu
+    com 20 linhas em vez de 4.397, 99,5% a menos, com cara de completo."""
+    r = m.inpi_prazos_carteira(procurador="Clarke Modet", de="2026-08-01",
+                               ate="2026-10-31", tipos=["anuidade"])
+    assert r["criterio"]["casos_no_criterio"] > 40_000, "voltou a filtrar por texto"
+
+
+@precisa_banco
 def test_carteira_por_procurador_usa_a_tabela_de_procuradores():
     r = m.inpi_prazos_carteira(procurador="clarke, modet", de="2026-01-01",
                                ate="2026-06-30", tipos=["anuidade"])
@@ -475,3 +486,56 @@ def test_prazo_de_exame_art_33_aparece_e_some_na_hora_certa():
                                ate="2026-12-31", tipos=["exame"])
     # esse processo ja teve 7.1 (parecer), entao o exame ja foi requerido
     assert not [p for p in r["prazos"] if p["tipo"] == "exame"]
+
+
+# --- D1: relatorio XLSX ------------------------------------------------------
+
+@precisa_banco
+def test_relatorio_xlsx_bate_com_a_tool_que_o_alimenta(tmp_path):
+    """O total do arquivo tem que ser o mesmo da tool. Divergencia aqui significa
+    que a serializacao perdeu linha no caminho."""
+    import openpyxl
+    from relatorios import gerar_prazos
+
+    destino = tmp_path / "p.xlsx"
+    r = gerar_prazos(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
+                     saida=str(destino))
+    assert destino.exists()
+
+    wb = openpyxl.load_workbook(destino)
+    assert "Resumo" in wb.sheetnames
+    linhas = sum(
+        ws.max_row - 4 for nome, ws in ((n, wb[n]) for n in wb.sheetnames)
+        if nome != "Resumo"
+    )
+    assert linhas == r["total_prazos"], "XLSX perdeu linhas em relacao a tool"
+
+
+@precisa_banco
+def test_relatorio_carrega_o_aviso_em_toda_aba(tmp_path):
+    """O aviso nao e formalidade: quem recebe a planilha precisa ver que e projecao
+    antes de agir."""
+    import openpyxl
+    from relatorios import AVISO, gerar_prazos
+
+    destino = tmp_path / "p.xlsx"
+    gerar_prazos(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
+                 saida=str(destino))
+    wb = openpyxl.load_workbook(destino)
+    for nome in wb.sheetnames:
+        texto = " ".join(
+            str(c.value) for row in wb[nome].iter_rows(max_row=60)
+            for c in row if c.value
+        )
+        assert AVISO[:40] in texto, f"aba {nome} sem o aviso"
+
+
+def test_urgencia_e_mais_conservadora_para_prazo_fatal():
+    """Art. 33 e recurso nao tem prazo complementar: perdeu, perdeu. Por isso 90
+    dias ja e vermelho, enquanto para anuidade 90 dias ainda e verde."""
+    from relatorios import _urgencia
+    assert _urgencia(90, "exame") == "VERMELHO"
+    assert _urgencia(90, "recurso") == "VERMELHO"
+    assert _urgencia(90, "anuidade") == "verde"
+    assert _urgencia(30, "anuidade") == "VERMELHO"
+    assert _urgencia(None, "anuidade") == "sem data"
