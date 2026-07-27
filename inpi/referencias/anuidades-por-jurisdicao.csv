@@ -22,3 +22,16 @@ PY,Paraguai,anuidade,deposito,2,anual,,,6,20,30,"Ley 1630/00 de Patentes","Decis
 UY,Uruguai,anuidade,deposito,2,anual,,,6,20,31,"Ley 17.164","regra nacional a confirmar",,,NAO-REVISADO
 ZA,Africa do Sul,anuidade,deposito,3,anual,,,6,20,31,"Patents Act 57 of 1978",,,,NAO-REVISADO
 IL,Israel,manutencao,concessao,,marcos,"6;10;14;18",,6,20,30,"Israel Patents Law 5727-1967 s. 56",,,,NAO-REVISADO
+EG,Egito,anuidade,deposito,1,anual,,,6,20,30,"Lei 82/2002 de Protecao da PI","regra nacional a confirmar com associado",,,NAO-REVISADO
+OA,OAPI (Africa francofona),anuidade,deposito,1,anual,,,6,20,30,"Acordo de Bangui, Anexo I","organizacao regional: uma anuidade cobre os 17 estados membros",,,NAO-REVISADO
+AP,ARIPO (Africa anglofona),anuidade,deposito,3,anual,,,6,20,31,"Protocolo de Harare","organizacao regional: anuidade unica ao ARIPO, mais taxas nacionais nos estados designados",,,NAO-REVISADO
+KE,Quenia,anuidade,deposito,3,anual,,,6,20,30,"Industrial Property Act 2001","regra nacional a confirmar",,,NAO-REVISADO
+MA,Marrocos,anuidade,deposito,1,anual,,,6,20,30,"Lei 17-97","regra nacional a confirmar",,,NAO-REVISADO
+NG,Nigeria,anuidade,deposito,1,anual,,,6,20,30,"Patents and Designs Act","regra nacional a confirmar",,,NAO-REVISADO
+MO,Macau,anuidade,deposito,3,anual,,,6,20,30,"RAEM Decreto-Lei 97/99/M","regra nacional a confirmar",,,NAO-REVISADO
+AT,Austria,anuidade,deposito,3,anual,,,6,20,30,"Patentgesetz § 166","normalmente e validacao de EP; ver EP-nac",,,NAO-REVISADO
+ES,Espanha,anuidade,deposito,3,anual,,,6,20,30,"Ley 24/2015 de Patentes art. 183","tambem e pais de validacao de EP; ver EP-nac",,,NAO-REVISADO
+PT,Portugal,anuidade,deposito,3,anual,,,6,20,30,"Codigo da Propriedade Industrial art. 368","tambem e pais de validacao de EP; ver EP-nac",,,NAO-REVISADO
+DK,Dinamarca,anuidade,deposito,3,anual,,,6,20,31,"Patentloven § 40-41","tambem e pais de validacao de EP; ver EP-nac",,,NAO-REVISADO
+FI,Finlandia,anuidade,deposito,3,anual,,,6,20,31,"Patenttilaki § 41","tambem e pais de validacao de EP; ver EP-nac",,,NAO-REVISADO
+TR,Turquia,anuidade,deposito,2,anual,,,6,20,30,"Lei 6769 de PI art. 101","tambem e pais de validacao de EP; ver EP-nac",,,NAO-REVISADO

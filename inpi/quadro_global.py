@@ -114,8 +114,11 @@ def _anuidades_estrangeiras(pais: str, data_deposito: date | None, hoje: date,
         # Filtrar pelo fim da graca jogava para fora anuidades que vencem dentro do
         # periodo -- a 12a de um EP validado vence 09/11/2026, mas com 6 meses de
         # graca o fim caia em 2027 e a linha sumia.
-        dentro = (hoje <= ini <= ate) if criterio == "vencimento" else (
-            ini <= ate and fim >= hoje)
+        # Vencida mas ainda dentro da graca continua DEVIDA, e e a mais urgente:
+        # so da para pagar com sobretaxa e o relogio esta correndo. Filtrar so por
+        # 'vence daqui pra frente' escondia justamente essas -- a 4a da ZA venceu
+        # em 21/04/2026 e some, embora a graca va ate outubro.
+        dentro = (hoje <= ini <= ate or (ini < hoje <= fim))             if criterio == "vencimento" else (ini <= ate and fim >= hoje)
         if dentro:
             saida.append({
                 "anuidade": n,
@@ -202,10 +205,18 @@ def montar(titular: str, ate: str, hoje: str | None = None,
 
     # --- Exterior: familia INPADOC ---
     vistos: set = set()
+    cob = {"casos_ativos": 0, "com_familia": 0, "sem_familia_consultada": []}
     for num_br, est in estados.items():
         if est["encerrado_em"]:
             continue
+        cob["casos_ativos"] += 1
         fam = familia(num_br)
+        # Uma familia que nao veio nao pode ser silencio: sem contador, um cliente
+        # com 60% dos casos em erro de consulta le o quadro como se fosse completo.
+        if fam.get("erro"):
+            cob["sem_familia_consultada"].append(num_br)
+        elif fam.get("membros"):
+            cob["com_familia"] += 1
         concessoes = _concessao_por_pedido(fam.get("membros", []))
         cli = nome_cli.get(num_br) or ""
         if not cli:
@@ -283,6 +294,18 @@ def montar(titular: str, ate: str, hoje: str | None = None,
                 key=lambda x: -x[1])
         },
         "com_data": sum(1 for l in linhas if l["vencimento"]),
+        "cobertura": {
+            "casos_ativos": cob["casos_ativos"],
+            "com_familia_no_exterior": cob["com_familia"],
+            "sem_familia_consultada": len(cob["sem_familia_consultada"]),
+            "numeros_sem_familia": cob["sem_familia_consultada"],
+            "alerta": (
+                f"{len(cob['sem_familia_consultada'])} de {cob['casos_ativos']} casos "
+                "ativos NAO tiveram a familia consultada com sucesso no EPO. Podem ter "
+                "equivalentes no exterior que nao aparecem neste quadro. Ausencia aqui "
+                "nao e prova de ausencia de prazo."
+            ) if cob["sem_familia_consultada"] else "",
+        },
         "por_pais": {
             p: sum(1 for l in linhas if l["pais"] == p)
             for p in sorted({l["pais"] for l in linhas})
@@ -315,10 +338,12 @@ def exportar(titular: str, ate: str, hoje: str | None = None,
         "que só cobra após a concessão — não há nada devido agora. Em nenhum caso isto é "
         "fatura: a base não sabe o que já foi pago."
     )
+    if q["cobertura"]["alerta"]:
+        ws["A2"] = ws["A2"].value + " ⚠️ COBERTURA: " + q["cobertura"]["alerta"] +             " Casos: " + ", ".join(q["cobertura"]["numeros_sem_familia"])
     ws["A2"].font = Font(size=9, italic=True, color="9C0006")
     ws.merge_cells("A2:J2")
     ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
-    ws.row_dimensions[2].height = 46
+    ws.row_dimensions[2].height = 68
 
     cols = [("cliente", "Cliente (grafia)", 40), ("numero_oficial", "Número oficial", 22),
             ("pais", "País", 7), ("anuidade", "Anuidade", 14),

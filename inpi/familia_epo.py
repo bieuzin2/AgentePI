@@ -59,16 +59,46 @@ def familia(numero_br: str, cli=None) -> dict:
     CACHE.mkdir(parents=True, exist_ok=True)
     arq = CACHE / f"{numero_br}.json"
     if arq.exists():
-        return json.loads(arq.read_text(encoding="utf-8"))
+        d = json.loads(arq.read_text(encoding="utf-8"))
+        # Sucesso e definitivo; erro expira em 30 dias. Um caso de 2025 pode nao
+        # estar no INPADOC hoje e estar no mes que vem -- gravar o 404 para sempre
+        # tornava a lacuna permanente e invisivel.
+        if not d.get("erro"):
+            return d
+        visto = d.get("consultado_em")
+        if visto and (time.time() - time.mktime(time.strptime(visto, "%Y-%m-%d"))) < 30 * 86400:
+            return d
 
     cli = cli or _cliente()
-    try:
-        r = cli.family(
-            "publication", epo_ops.models.Epodoc(f"BR{numero_br}"),
-            constituents=["biblio"],
-        )
-    except Exception as e:
-        d = {"numero_br": numero_br, "erro": str(e)[:120], "membros": []}
+
+    # Varias formas de referencia, em cascata. Nao e paranoia: usar so
+    # Epodoc('BR' + numero) dava 404 em todos os processos legados, e o
+    # PI8605001 -- que assim ficava invisivel -- tem 22 membros em 17 paises,
+    # entre eles Egito, OAPI, India e Austria. Um erro de formato escondia
+    # jurisdicoes inteiras da carteira.
+    tentativas = [("epodoc", epo_ops.models.Epodoc(f"BR{numero_br}"))]
+    if numero_br[:2].isdigit():
+        tentativas.append(("docdb-A2", epo_ops.models.Docdb(numero_br, "BR", "A2")))
+        tentativas.append(("docdb-A", epo_ops.models.Docdb(numero_br, "BR", "A")))
+    else:
+        # legado: 'PI8605001' -> Docdb('8605001', 'BR', 'A')
+        so_digitos = "".join(ch for ch in numero_br if ch.isdigit())
+        tentativas.append(("docdb-legado", epo_ops.models.Docdb(so_digitos, "BR", "A")))
+        tentativas.append(("epodoc-cru", epo_ops.models.Epodoc(numero_br)))
+
+    r, forma, ultimo_erro = None, None, None
+    for lbl, inp in tentativas:
+        try:
+            r = cli.family("publication", inp, constituents=["biblio"])
+            forma = lbl
+            break
+        except Exception as e:
+            ultimo_erro = str(e)[:120]
+
+    if r is None:
+        d = {"numero_br": numero_br, "erro": ultimo_erro, "membros": [],
+             "formas_tentadas": [t[0] for t in tentativas],
+             "consultado_em": time.strftime("%Y-%m-%d")}
         arq.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         return d
 
@@ -123,7 +153,8 @@ def familia(numero_br: str, cli=None) -> dict:
         })
 
     d = {"numero_br": numero_br, "membros": membros,
-         "familia_id": fam.get("@family-id")}
+         "familia_id": fam.get("@family-id"), "forma_usada": forma,
+         "consultado_em": time.strftime("%Y-%m-%d")}
     arq.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     return d
 
