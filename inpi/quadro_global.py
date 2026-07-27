@@ -24,39 +24,79 @@ import anuidades as anu  # noqa: E402
 import jurisdicoes as jur  # noqa: E402
 
 
-def _anuidades_estrangeiras(pais: str, data_deposito: date, hoje: date,
-                            ate: date) -> list[dict]:
-    """Janelas de anuidade de um pais, pela regra da tabela. Estimativa."""
+def _anuidades_estrangeiras(pais: str, data_deposito: date | None, hoje: date,
+                            ate: date, data_concessao: date | None = None,
+                            criterio: str = "vencimento") -> list[dict]:
+    """Janelas de anuidade de um pais, pela regra da tabela. Estimativa.
+
+    criterio='vencimento' (padrao): entra quem VENCE dentro do periodo. E a leitura
+        literal de "anuidades a pagar ate tal data".
+    criterio='janela': entra tambem quem apenas ABRE o prazo no periodo, mesmo
+        vencendo depois. Util para planejar caixa, mas faz o mesmo caso aparecer
+        com duas anuidades seguidas.
+    """
     regras = jur.carregar()
     r = regras.get(pais.upper())
     if not r:
         return [{"confianca": "sem_regra",
                  "nota": f"Jurisdicao {pais} nao esta em anuidades-por-jurisdicao.csv"}]
-    if r.data_base != "deposito":
-        return [{"confianca": "indisponivel",
-                 "nota": (f"{r.nome}: {r.tipo_taxa} contada da {r.data_base}. A familia "
-                          "INPADOC nao traz a data de concessao, entao nao ha estimativa "
-                          "possivel aqui. Confirme com o associado local.")}]
     if r.periodicidade != "anual" or not r.primeira:
         return [{"confianca": "indisponivel",
                  "nota": f"{r.nome}: periodicidade '{r.periodicidade}' nao suportada."}]
 
+    base = data_concessao if r.data_base == "concessao" else data_deposito
+    if not base:
+        falta = "concessao" if r.data_base == "concessao" else "deposito"
+        return [{"confianca": "indisponivel",
+                 "nota": (f"{r.nome}: {r.tipo_taxa} contada da {r.data_base}, e nao ha "
+                          f"data de {falta} para este caso. Sem a data-base nao ha "
+                          "estimativa. Confirme com o associado local.")}]
+
     saida = []
     for n in range(r.primeira, r.vigencia_anos + 1):
-        ini = anu._mais_anos(data_deposito, n - 1)
+        ini = anu._mais_anos(base, n - 1)
         fim = anu._mais_meses(ini, r.graca_meses) if r.graca_meses else ini
-        if ini <= ate and fim >= hoje:
+        dentro = (hoje <= fim <= ate) if criterio == "vencimento" else (
+            ini <= ate and fim >= hoje)
+        if dentro:
             saida.append({
                 "anuidade": n,
                 "inicio": ini.isoformat(),
                 "fim_com_graca": fim.isoformat(),
                 "confianca": "estimado",
+                "data_base_usada": f"{r.data_base} {base.isoformat()}",
                 "nota": f"{r.base_legal} — REGRA NAO REVISADA, confirme com o associado",
             })
     return saida
 
 
-def montar(titular: str, ate: str, hoje: str | None = None) -> dict:
+def _concessao_por_pedido(membros: list[dict]) -> dict:
+    """Mapa (pais, numero_pedido) -> data de concessao.
+
+    O membro com kind B*/C* e a patente concedida, e a data daquela publicacao e a
+    data de concessao. Casa com o pedido pelo numero do PEDIDO, nao pelo da
+    publicacao: nos EUA o pedido publicado (A1) e a patente (B2) tem numeros
+    diferentes.
+    """
+    mapa: dict = {}
+    for mb in membros:
+        if not mb.get("concedida") or not mb.get("data_publicacao"):
+            continue
+        d = mb["data_publicacao"]
+        try:
+            dt = date(int(d[:4]), int(d[4:6]), int(d[6:8]))
+        except Exception:
+            continue
+        chave = (mb["pais"], mb.get("numero_pedido"))
+        if chave[1] and (chave not in mapa or dt < mapa[chave]):
+            mapa[chave] = dt
+        # tambem indexa por pais, para o caso de o numero de pedido faltar
+        mapa.setdefault((mb["pais"], None), dt)
+    return mapa
+
+
+def montar(titular: str, ate: str, hoje: str | None = None,
+           criterio: str = "vencimento") -> dict:
     """Quadro Brasil + exterior de um cliente."""
     import inpi_mcp as m
     from familia_epo import familia
@@ -79,6 +119,13 @@ def montar(titular: str, ate: str, hoje: str | None = None) -> dict:
     nome_cli = {r[0]: r[1] for r in cur.fetchall()}
 
     for p in br["prazos"]:
+        # inpi_prazos_carteira filtra por intersecao de janela. Com criterio
+        # 'vencimento', mantem so o que de fato vence no periodo -- senao o mesmo
+        # caso aparece com duas anuidades seguidas, uma vencendo fora da janela.
+        if criterio == "vencimento" and not (
+            d_hoje.isoformat() <= p["prazo"] <= d_ate.isoformat()
+        ):
+            continue
         linhas.append({
             "cliente": nome_cli.get(p["numero_inpi"], ""),
             "numero_oficial": f"BR {p['numero_inpi']}",
@@ -97,27 +144,41 @@ def montar(titular: str, ate: str, hoje: str | None = None) -> dict:
         if est["encerrado_em"]:
             continue
         fam = familia(num_br)
+        concessoes = _concessao_por_pedido(fam.get("membros", []))
         cli = nome_cli.get(num_br) or ""
         if not cli:
             r = m.con().execute(
                 "SELECT arg_max(depositante,1) FROM depositantes WHERE numero_inpi=?",
                 [num_br]).fetchone()
             cli = r[0] if r else ""
+        # Um PEDIDO pode ter varias publicacoes: 'EP-4502115-A1' e '-A4', ou
+        # 'KR-20160103019-A' (pedido) e 'KR-102235205-B1' (patente concedida, com
+        # numero diferente). Anuidade e por pedido, entao agrupa por numero do
+        # PEDIDO e escolhe uma publicacao para representar -- de preferencia a
+        # concedida, que e o numero que o associado usa.
+        por_pedido: dict = {}
         for mb in fam.get("membros", []):
             if mb["pais"] in ("BR", "WO") or not mb.get("data_deposito"):
                 continue
-            # Dedup por (pais, numero) SEM o kind code: 'EP-4502115-A1' e
-            # 'EP-4502115-A4' sao publicacoes do mesmo pedido, e anuidade e por
-            # pedido. Manter as duas inflava a conta.
-            chave_pedido = (mb["pais"], mb["numero"])
+            chave = (mb["pais"], mb.get("numero_pedido") or mb["numero"])
+            atual = por_pedido.get(chave)
+            if atual is None or (mb.get("concedida") and not atual.get("concedida")):
+                por_pedido[chave] = mb
+
+        for chave_pedido, mb in por_pedido.items():
             if chave_pedido in vistos:
                 continue
             vistos.add(chave_pedido)
+            d = mb["data_deposito"]
             try:
-                dep = date.fromisoformat(mb["data_deposito"][:10])
+                dep = date(int(d[:4]), int(d[4:6]), int(d[6:8])) if len(d) == 8 \
+                    else date.fromisoformat(d[:10])
             except Exception:
                 continue
-            for a in _anuidades_estrangeiras(mb["pais"], dep, d_hoje, d_ate):
+            conc = (concessoes.get((mb["pais"], mb.get("numero_pedido")))
+                    or concessoes.get((mb["pais"], None)))
+            for a in _anuidades_estrangeiras(mb["pais"], dep, d_hoje, d_ate,
+                                             data_concessao=conc, criterio=criterio):
                 if a["confianca"] in ("indisponivel", "sem_regra"):
                     linhas.append({
                         "cliente": cli, "numero_oficial": mb["referencia"],
@@ -156,13 +217,13 @@ def montar(titular: str, ate: str, hoje: str | None = None) -> dict:
 
 
 def exportar(titular: str, ate: str, hoje: str | None = None,
-             saida: str | None = None) -> dict:
+             saida: str | None = None, criterio: str = "vencimento") -> dict:
     """Gera o XLSX do quadro global."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    q = montar(titular, ate, hoje)
+    q = montar(titular, ate, hoje, criterio=criterio)
     wb = Workbook()
     ws = wb.active
     ws.title = "Anuidades BR + exterior"

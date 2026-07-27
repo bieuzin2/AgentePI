@@ -88,9 +88,20 @@ def familia(numero_br: str, cli=None) -> dict:
         pais = _txt(docdb.get("country"))
         num = _txt(docdb.get("doc-number"))
         kind = _txt(docdb.get("kind"))
+        # data DA PUBLICACAO deste membro. Quando o kind e de concessao (B*/C*),
+        # esta e a data de concessao -- que e a data-base da anuidade em US, JP,
+        # KR e outros. Sem ela, esses paises ficavam sem estimativa possivel.
+        pub_data = _txt(docdb.get("date")) or None
         # data de deposito vem da application-reference, nao da publicacao
         app = _L(mb.get("application-reference", {}).get("document-id"))
         dep = next((_txt(a.get("date")) for a in app if a.get("date")), None)
+        # numero do PEDIDO: e o que casa o A1 com o B2 do mesmo caso, ja que nos
+        # EUA a publicacao do pedido e a da patente tem numeros diferentes.
+        app_num = next(
+            (_txt(a.get("doc-number")) for a in app
+             if a.get("@document-id-type") == "docdb" and a.get("doc-number")),
+            None,
+        )
         titulo = ""
         ex = mb.get("exchange-document")
         if isinstance(ex, dict):
@@ -105,6 +116,9 @@ def familia(numero_br: str, cli=None) -> dict:
             "numero": num,
             "kind": kind,
             "data_deposito": dep,
+            "data_publicacao": pub_data,
+            "numero_pedido": app_num,
+            "concedida": bool(kind and kind[0] in ("B", "C")),
             "titulo": titulo,
         })
 
