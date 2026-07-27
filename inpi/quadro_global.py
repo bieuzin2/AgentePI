@@ -24,49 +24,111 @@ import anuidades as anu  # noqa: E402
 import jurisdicoes as jur  # noqa: E402
 
 
+def _regra_de(pais: str, kind: str | None):
+    """Resolve a regra aplicavel. Kind 'T*' e traducao de patente europeia validada.
+
+    DK, ES, PT, FI e TR aparecem como jurisdicoes proprias, mas quando o kind e T*
+    o documento e uma validacao nacional de um EP -- e a regra e a de EP-nac, nao a
+    nacional generica. A linha EP-nac ja existia no CSV e nunca era consultada,
+    porque o lookup usava so o codigo do pais.
+    """
+    regras = jur.carregar()
+    if kind and kind.upper().startswith("T"):
+        r = regras.get("EP-NAC")
+        if r:
+            return r, True
+    return regras.get(pais.upper()), False
+
+
+def _vencimentos(r, base: date) -> list[tuple[int, date]]:
+    """(numero da anuidade, data de vencimento) segundo a periodicidade da regra."""
+    if r.periodicidade == "marcos":
+        # Anos fracionarios contados da data-base: US paga em 3,5 / 7,5 / 11,5 anos
+        # da concessao. O 'numero da anuidade' aqui e o marco arredondado, que e
+        # como o USPTO nomeia ('4TH YEAR', '8TH YEAR').
+        return [
+            (int(m) + 1, anu._mais_meses(base, int(round(m * 12))))
+            for m in r.marcos
+        ]
+    return [
+        (n, anu._mais_anos(base, n - 1))
+        for n in range(r.primeira or 1, r.vigencia_anos + 1)
+    ]
+
+
 def _anuidades_estrangeiras(pais: str, data_deposito: date | None, hoje: date,
                             ate: date, data_concessao: date | None = None,
-                            criterio: str = "vencimento") -> list[dict]:
+                            criterio: str = "vencimento",
+                            kind: str | None = None) -> list[dict]:
     """Janelas de anuidade de um pais, pela regra da tabela. Estimativa.
 
     criterio='vencimento' (padrao): entra quem VENCE dentro do periodo. E a leitura
         literal de "anuidades a pagar ate tal data".
     criterio='janela': entra tambem quem apenas ABRE o prazo no periodo, mesmo
-        vencendo depois. Util para planejar caixa, mas faz o mesmo caso aparecer
-        com duas anuidades seguidas.
+        vencendo depois.
     """
-    regras = jur.carregar()
-    r = regras.get(pais.upper())
+    r, via_ep = _regra_de(pais, kind)
     if not r:
         return [{"confianca": "sem_regra",
                  "nota": f"Jurisdicao {pais} nao esta em anuidades-por-jurisdicao.csv"}]
-    if r.periodicidade != "anual" or not r.primeira:
-        return [{"confianca": "indisponivel",
-                 "nota": f"{r.nome}: periodicidade '{r.periodicidade}' nao suportada."}]
 
     base = data_concessao if r.data_base == "concessao" else data_deposito
+
+    # Pedido AINDA NAO CONCEDIDO em jurisdicao que conta da concessao NAO TEM
+    # anuidade devida -- em JP e KR o 1o ao 3o ano sao pagos NA concessao. Isso e
+    # resposta, nao lacuna: antes saia como 'indisponivel', que dizia "nao sei"
+    # sobre algo que se sabe.
+    if r.data_base == "concessao" and not data_concessao:
+        return [{"confianca": "sem_anuidade_nesta_fase",
+                 "nota": (f"{r.nome}: {r.tipo_taxa} conta da concessao, e este caso "
+                          "ainda e pedido em exame. Nao ha anuidade devida nesta fase; "
+                          "passa a haver quando conceder.")}]
     if not base:
-        falta = "concessao" if r.data_base == "concessao" else "deposito"
         return [{"confianca": "indisponivel",
-                 "nota": (f"{r.nome}: {r.tipo_taxa} contada da {r.data_base}, e nao ha "
-                          f"data de {falta} para este caso. Sem a data-base nao ha "
-                          "estimativa. Confirme com o associado local.")}]
+                 "nota": (f"{r.nome}: sem data de {r.data_base} para este caso. "
+                          "Confirme com o associado local.")}]
 
     saida = []
-    for n in range(r.primeira, r.vigencia_anos + 1):
-        ini = anu._mais_anos(base, n - 1)
+    # Alguns paises cobram o primeiro bloco logo apos a concessao, fora do
+    # calendario anual: MX em 2 meses, CL em 60 dias uteis.
+    if r.dias_apos_concessao and data_concessao:
+        venc = anu._mais_meses(data_concessao, 0)
+        venc = date.fromordinal(venc.toordinal() + r.dias_apos_concessao)
+        fim = anu._mais_meses(venc, r.graca_meses) if r.graca_meses else venc
+        if (hoje <= venc <= ate) if criterio == "vencimento" else (
+                venc <= ate and fim >= hoje):
+            saida.append({
+                "anuidade": 0,
+                "inicio": venc.isoformat(),
+                "vencimento": venc.isoformat(),
+                "fim_com_graca": fim.isoformat(),
+                "confianca": "estimado",
+                "data_base_usada": f"concessao {data_concessao.isoformat()}",
+                "nota": (f"1o pagamento pos-concessao ({r.dias_apos_concessao} dias). "
+                         f"{r.base_legal} — REGRA NAO REVISADA"),
+            })
+
+    for n, ini in _vencimentos(r, base):
         fim = anu._mais_meses(ini, r.graca_meses) if r.graca_meses else ini
-        dentro = (hoje <= fim <= ate) if criterio == "vencimento" else (
+        # O VENCIMENTO e a data ordinaria; a graca e prorrogacao com sobretaxa.
+        # Filtrar pelo fim da graca jogava para fora anuidades que vencem dentro do
+        # periodo -- a 12a de um EP validado vence 09/11/2026, mas com 6 meses de
+        # graca o fim caia em 2027 e a linha sumia.
+        dentro = (hoje <= ini <= ate) if criterio == "vencimento" else (
             ini <= ate and fim >= hoje)
         if dentro:
             saida.append({
                 "anuidade": n,
                 "inicio": ini.isoformat(),
+                "vencimento": ini.isoformat(),
                 "fim_com_graca": fim.isoformat(),
                 "confianca": "estimado",
-                "data_base_usada": f"{r.data_base} {base.isoformat()}",
+                "data_base_usada": f"{r.data_base} {base.isoformat()}"
+                                   + (" (via EP-nac)" if via_ep else ""),
                 "nota": f"{r.base_legal} — REGRA NAO REVISADA, confirme com o associado",
             })
+    # Sem vencimento na janela nao vira linha: quem pergunta "o que vence ate X"
+    # nao quer ver os casos que nao vencem.
     return saida
 
 
@@ -178,13 +240,22 @@ def montar(titular: str, ate: str, hoje: str | None = None,
             conc = (concessoes.get((mb["pais"], mb.get("numero_pedido")))
                     or concessoes.get((mb["pais"], None)))
             for a in _anuidades_estrangeiras(mb["pais"], dep, d_hoje, d_ate,
-                                             data_concessao=conc, criterio=criterio):
-                if a["confianca"] in ("indisponivel", "sem_regra"):
+                                             data_concessao=conc, criterio=criterio,
+                                             kind=mb.get("kind")):
+                if a["confianca"] in ("indisponivel", "sem_regra",
+                                      "sem_anuidade_nesta_fase"):
+                    # A 'situacao' vem do motivo REAL, nao mais fixa no codigo. Antes
+                    # dizia "regra conta da concessao" para todos, o que era falso em
+                    # 14 das 24 linhas -- a causa la era periodicidade nao suportada.
                     linhas.append({
                         "cliente": cli, "numero_oficial": mb["referencia"],
-                        "pais": mb["pais"], "anuidade": "?",
+                        "pais": mb["pais"], "anuidade": "—",
                         "inicio": None, "vencimento": None,
-                        "situacao": "regra conta da concessão",
+                        "situacao": {
+                            "sem_anuidade_nesta_fase": "pedido em exame — nada devido",
+                            "sem_regra": "jurisdição fora da tabela",
+                            "indisponivel": "falta data-base",
+                        }[a["confianca"]],
                         "confianca": a["confianca"], "fonte": a["nota"],
                         "equivalente_br": num_br,
                     })
@@ -192,7 +263,8 @@ def montar(titular: str, ate: str, hoje: str | None = None,
                 linhas.append({
                     "cliente": cli, "numero_oficial": mb["referencia"],
                     "pais": mb["pais"], "anuidade": f"{a['anuidade']}a anuidade",
-                    "inicio": a["inicio"], "vencimento": a["fim_com_graca"],
+                    "inicio": a["inicio"], "vencimento": a["vencimento"],
+                    "fim_com_graca": a["fim_com_graca"],
                     "situacao": "estimado pela regra do país",
                     "confianca": "estimado", "fonte": a["nota"],
                     "equivalente_br": num_br,
@@ -205,9 +277,12 @@ def montar(titular: str, ate: str, hoje: str | None = None,
         "ate": d_ate.isoformat(),
         "total": len(linhas),
         "por_confianca": {
-            k: sum(1 for l in linhas if l["confianca"] == k)
-            for k in ("calculado", "estimado", "indisponivel", "sem_regra")
+            k: n for k, n in sorted(
+                {c: sum(1 for l in linhas if l["confianca"] == c)
+                 for c in {l["confianca"] for l in linhas}}.items(),
+                key=lambda x: -x[1])
         },
+        "com_data": sum(1 for l in linhas if l["vencimento"]),
         "por_pais": {
             p: sum(1 for l in linhas if l["pais"] == p)
             for p in sorted({l["pais"] for l in linhas})
@@ -236,17 +311,21 @@ def exportar(titular: str, ate: str, hoje: str | None = None,
         "285.409 despachos reais. EXTERIOR ('estimado'): regra transcrita da legislação, "
         "NÃO revisada por profissional habilitado — confirme a data com o associado local "
         "antes de agir. 'indisponível': a anuidade conta da CONCESSÃO e a família INPADOC "
-        "não traz essa data. Em nenhum caso isto é fatura: a base não sabe o que já foi pago."
+        "não traz essa data. 'sem_anuidade_nesta_fase': pedido ainda em exame numa jurisdição "
+        "que só cobra após a concessão — não há nada devido agora. Em nenhum caso isto é "
+        "fatura: a base não sabe o que já foi pago."
     )
     ws["A2"].font = Font(size=9, italic=True, color="9C0006")
-    ws.merge_cells("A2:H2")
+    ws.merge_cells("A2:J2")
     ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
     ws.row_dimensions[2].height = 46
 
-    cols = [("cliente", "Cliente (grafia)", 42), ("numero_oficial", "Número oficial", 22),
+    cols = [("cliente", "Cliente (grafia)", 40), ("numero_oficial", "Número oficial", 22),
             ("pais", "País", 7), ("anuidade", "Anuidade", 14),
-            ("inicio", "Início do prazo", 15), ("vencimento", "Vencimento", 14),
-            ("confianca", "Confiança", 13), ("fonte", "Regra / observação", 62)]
+            ("vencimento", "Vencimento", 14), ("fim_com_graca", "Limite c/ sobretaxa", 18),
+            ("confianca", "Confiança", 22), ("situacao", "Situação", 26),
+            ("equivalente_br", "Equiv. BR", 15),
+            ("fonte", "Regra / observação", 62)]
     for i, (_, rot, larg) in enumerate(cols, 1):
         c = ws.cell(row=4, column=i, value=rot)
         c.font = Font(bold=True)
@@ -255,6 +334,7 @@ def exportar(titular: str, ate: str, hoje: str | None = None,
 
     fills = {"calculado": PatternFill("solid", fgColor="C6EFCE"),
              "estimado": PatternFill("solid", fgColor="FFEB9C"),
+             "sem_anuidade_nesta_fase": PatternFill("solid", fgColor="DDEBF7"),
              "indisponivel": PatternFill("solid", fgColor="F2F2F2"),
              "sem_regra": PatternFill("solid", fgColor="FFC7CE")}
     for ln, item in enumerate(q["linhas"], start=5):
@@ -264,7 +344,7 @@ def exportar(titular: str, ate: str, hoje: str | None = None,
         if f:
             ws.cell(row=ln, column=7).fill = f
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A4:H{max(4, len(q['linhas']) + 4)}"
+    ws.auto_filter.ref = f"A4:J{max(4, len(q['linhas']) + 4)}"
 
     destino = Path(saida) if saida else (
         RAIZ.parent / "docs" / "relatorios" /

@@ -40,7 +40,8 @@ class Regra:
     data_base: str          # 'deposito' ou 'concessao'
     primeira: int | None
     periodicidade: str      # 'anual', 'quinquenal', 'marcos'
-    marcos: list[float]     # anos da concessao, quando periodicidade='marcos'
+    marcos: list[float]     # anos da data_base, quando periodicidade='marcos'
+    dias_apos_concessao: int | None  # 1o pagamento devido N dias apos a concessao
     graca_meses: int
     vigencia_anos: int
     fase_nacional_meses: int | None
@@ -77,6 +78,7 @@ def carregar() -> dict[str, Regra]:
                 primeira=_int(r["primeira"]),
                 periodicidade=r["periodicidade"],
                 marcos=[float(x) for x in r["marcos"].split(";") if x.strip()],
+                dias_apos_concessao=_int(r.get("dias_apos_concessao")),
                 graca_meses=_int(r["prazo_graca_meses"], 0),
                 vigencia_anos=_int(r["vigencia_anos"], 20),
                 fase_nacional_meses=_int(r["prazo_fase_nacional_meses"]),

@@ -1,21 +1,24 @@
-jurisdicao,nome,tipo_taxa,data_base,primeira,periodicidade,marcos,prazo_graca_meses,vigencia_anos,prazo_fase_nacional_meses,base_legal,fonte,revisado_por,revisado_em,confianca
-BR,Brasil,anuidade,deposito,3,anual,,6,20,30,"LPI 9.279/96 arts. 84, 85 e 40","calibrado contra 285.409 despachos da base local (mediana -0,04 ano do aniversario N)",,,calibrado-empiricamente
-US,Estados Unidos,manutencao,concessao,,marcos,"3.5;7.5;11.5",6,20,30,"35 U.S.C. 41(b); 37 CFR 1.362",,,,NAO-REVISADO
-EP,Patente Europeia (pedido),anuidade,deposito,3,anual,,6,20,31,"EPC Art. 86; Rule 51",,,,NAO-REVISADO
-EP-nac,EP apos concessao,anuidade,deposito,3,anual,,6,20,,"anuidades passam a ser nacionais em cada estado validado",,,,NAO-REVISADO
-CN,China,anuidade,deposito,1,anual,,6,20,30,"Lei de Patentes da RPC art. 43",,,,NAO-REVISADO
-JP,Japao,anuidade,concessao,1,anual,,6,20,30,"Lei de Patentes do Japao art. 107 (1o ao 3o ano pagos na concessao)",,,,NAO-REVISADO
-KR,Coreia do Sul,anuidade,concessao,1,anual,,6,20,31,"Lei de Patentes da Coreia art. 79 (1o ao 3o ano na concessao)",,,,NAO-REVISADO
-IN,India,anuidade,deposito,3,anual,,6,20,31,"Indian Patents Act s. 53; Rule 80",,,,NAO-REVISADO
-CA,Canada,anuidade,deposito,2,anual,,12,20,30,"Patent Act s. 27.1; Patent Rules",,,,NAO-REVISADO
-MX,Mexico,anuidade,concessao,1,quinquenal,,6,20,30,"Ley Federal de Proteccion a la Propiedad Industrial",,,,NAO-REVISADO
-AR,Argentina,anuidade,deposito,1,anual,,6,20,30,"Ley 24.481",,,,NAO-REVISADO
-AU,Australia,anuidade,deposito,5,anual,,6,20,31,"Patents Act 1990 s. 143; Reg 13.3",,,,NAO-REVISADO
-GB,Reino Unido,anuidade,deposito,5,anual,,6,20,31,"Patents Act 1977 s. 25",,,,NAO-REVISADO
-DE,Alemanha,anuidade,deposito,3,anual,,6,20,30,"PatG § 17",,,,NAO-REVISADO
-RU,Russia,anuidade,deposito,3,anual,,6,20,31,"Codigo Civil da FR parte IV",,,,NAO-REVISADO
-CL,Chile,anuidade,concessao,1,quinquenal,,6,20,30,"Ley 19.039",,,,NAO-REVISADO
-CO,Colombia,anuidade,deposito,2,anual,,6,20,31,"Decision Andina 486 art. 80",,,,NAO-REVISADO
-PE,Peru,anuidade,deposito,2,anual,,6,20,31,"Decision Andina 486 art. 80",,,,NAO-REVISADO
-ZA,Africa do Sul,anuidade,deposito,3,anual,,6,20,31,"Patents Act 57 of 1978",,,,NAO-REVISADO
-IL,Israel,manutencao,concessao,,marcos,"6;10;14;18",6,20,30,"Israel Patents Law 5727-1967 s. 56",,,,NAO-REVISADO
+jurisdicao,nome,tipo_taxa,data_base,primeira,periodicidade,marcos,dias_apos_concessao,prazo_graca_meses,vigencia_anos,prazo_fase_nacional_meses,base_legal,fonte,revisado_por,revisado_em,confianca
+BR,Brasil,anuidade,deposito,3,anual,,,6,20,30,"LPI 9.279/96 arts. 84, 85 e 40","calibrado contra 285.409 despachos da base local (mediana -0,04 ano do aniversario N)",,,calibrado-empiricamente
+US,Estados Unidos,manutencao,concessao,,marcos,"3.5;7.5;11.5",,6,20,30,"35 U.S.C. 41(b); 37 CFR 1.362","USPTO fee schedule: vence em 3,5/7,5/11,5 anos da concessao; janela sem sobretaxa nos 6 meses anteriores; graca de 6 meses; expira no 4o/8o/12o aniversario",,,pesquisado-fonte-oficial
+EP,Patente Europeia (pedido),anuidade,deposito,3,anual,,,6,20,31,"EPC Art. 86; Rule 51","anuidade ao EPO enquanto pendente; apos a concessao passa a ser nacional (ver EP-nac)",,,pesquisado-fonte-oficial
+EP-nac,EP validada em pais nacional,anuidade,deposito,3,anual,,,6,20,,"legislacao nacional de cada estado validado","apos a concessao do EP, cada pais validado cobra anuidade nacional a partir do 3o ano, contada da DATA DE DEPOSITO do EP",,,pesquisado-fonte-oficial
+CN,China,anuidade,deposito,1,anual,,,6,20,30,"Lei de Patentes da RPC art. 43",,,,NAO-REVISADO
+JP,Japao,anuidade,concessao,4,anual,,,6,20,30,"Lei de Patentes do Japao art. 107","1o ao 3o ano sao pagos DE UMA VEZ na concessao; a partir do 4o, anual",,,NAO-REVISADO
+KR,Coreia do Sul,anuidade,concessao,4,anual,,,6,20,31,"Lei de Patentes da Coreia art. 79","1o ao 3o ano pagos na concessao; a partir do 4o, anual",,,NAO-REVISADO
+IN,India,anuidade,deposito,3,anual,,,6,20,31,"Indian Patents Act s. 53; Rule 80",,,,NAO-REVISADO
+CA,Canada,anuidade,deposito,2,anual,,,12,20,30,"Patent Act s. 27.1; Patent Rules",,,,NAO-REVISADO
+MX,Mexico,anuidade,deposito,5,marcos,"5;10;15",60,6,20,30,"Ley Federal de Proteccion a la Propiedad Industrial","IMPI cobra em blocos de 5 anos. O 1o bloco e pago ate 2 meses da concessao e cobre o ano da concessao mais 4; os seguintes vencem no aniversario da DATA DE DEPOSITO, a cada 5 anos. Graca de 6 meses com sobretaxa",,,pesquisado-fonte-oficial
+AR,Argentina,anuidade,deposito,1,anual,,,6,20,30,"Ley 24.481",,,,NAO-REVISADO
+AU,Australia,anuidade,deposito,5,anual,,,6,20,31,"Patents Act 1990 s. 143; Reg 13.3",,,,NAO-REVISADO
+GB,Reino Unido,anuidade,deposito,5,anual,,,6,20,31,"Patents Act 1977 s. 25",,,,NAO-REVISADO
+DE,Alemanha,anuidade,deposito,3,anual,,,6,20,30,"PatG § 17",,,,NAO-REVISADO
+RU,Russia,anuidade,deposito,3,anual,,,6,20,31,"Codigo Civil da FR parte IV",,,,NAO-REVISADO
+UA,Ucrania,anuidade,deposito,1,anual,,,12,20,31,"Lei da Ucrania sobre Protecao de Invencoes","anuidade anual contada do deposito; prazo de graca de 12 meses com sobretaxa",,,NAO-REVISADO
+CL,Chile,anuidade,deposito,10,marcos,"10",60,6,20,30,"Ley 19.039","INAPI: a 1a renovacao e paga ate 60 dias uteis da concessao; a 2a vence no 10o aniversario da DATA DE DEPOSITO e cobre os 10 anos restantes. Graca de 6 meses",,,pesquisado-fonte-oficial
+CO,Colombia,anuidade,deposito,2,anual,,,6,20,31,"Decision Andina 486 art. 80",,,,NAO-REVISADO
+PE,Peru,anuidade,deposito,2,anual,,,6,20,31,"Decision Andina 486 art. 80",,,,NAO-REVISADO
+PY,Paraguai,anuidade,deposito,2,anual,,,6,20,30,"Ley 1630/00 de Patentes","Decision Andina nao se aplica; regra nacional a confirmar",,,NAO-REVISADO
+UY,Uruguai,anuidade,deposito,2,anual,,,6,20,31,"Ley 17.164","regra nacional a confirmar",,,NAO-REVISADO
+ZA,Africa do Sul,anuidade,deposito,3,anual,,,6,20,31,"Patents Act 57 of 1978",,,,NAO-REVISADO
+IL,Israel,manutencao,concessao,,marcos,"6;10;14;18",,6,20,30,"Israel Patents Law 5727-1967 s. 56",,,,NAO-REVISADO

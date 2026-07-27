@@ -554,3 +554,59 @@ def test_janela_de_anuidade_e_intersecao_nao_so_o_fim():
     # tem que haver anuidade que ainda nao entrou no prazo complementar
     assert any(p["status"] != "prazo_complementar_corrente" for p in r["prazos"]), \
         "so devolveu as que ja estao no fim do prazo"
+
+
+# --- E1-E4: lacunas do quadro global ----------------------------------------
+
+def test_periodicidade_marcos_us():
+    """US paga em 3,5/7,5/11,5 anos da CONCESSAO (USPTO fee schedule). A
+    periodicidade 'marcos' nao era suportada e o return de erro disparava antes
+    de olhar a data-base -- 14 linhas saiam como 'indisponivel' com a mensagem
+    errada 'regra conta da concessao'."""
+    from quadro_global import _anuidades_estrangeiras
+    r = _anuidades_estrangeiras("US", None, date(2021, 1, 1), date(2022, 12, 31),
+                                data_concessao=date(2018, 4, 24))
+    venc = {x["vencimento"] for x in r if x.get("vencimento")}
+    assert "2021-10-24" in venc, "marco de 3,5 anos da concessao nao saiu"
+
+
+def test_pedido_nao_concedido_nao_e_lacuna():
+    """Em jurisdicao que conta da concessao, pedido em exame NAO TEM anuidade
+    devida. Antes saia 'indisponivel', que diz 'nao sei' sobre algo que se sabe."""
+    from quadro_global import _anuidades_estrangeiras
+    r = _anuidades_estrangeiras("KR", date(2020, 1, 1), date(2026, 7, 26),
+                                date(2026, 12, 31), data_concessao=None)
+    assert r[0]["confianca"] == "sem_anuidade_nesta_fase"
+    assert "nao ha anuidade devida" in r[0]["nota"].lower()
+
+
+def test_validacao_de_ep_usa_regra_ep_nac():
+    """Kind T* e traducao de patente europeia validada. A regra e a de EP-nac
+    (3o ano em diante, da data de deposito do EP), nao a nacional generica --
+    e a linha EP-nac ja existia no CSV, so nunca era consultada."""
+    from quadro_global import _anuidades_estrangeiras, _regra_de
+    r, via_ep = _regra_de("DK", "T3")
+    assert via_ep and r.jurisdicao == "EP-NAC"
+    # EP-3235912, deposito 2015-11-09: a 12a vence em 09/11/2026
+    saida = _anuidades_estrangeiras("DK", date(2015, 11, 9), date(2026, 7, 26),
+                                    date(2026, 12, 31), kind="T3")
+    assert any(x.get("vencimento") == "2026-11-09" for x in saida)
+
+
+def test_vencimento_e_a_data_ordinaria_nao_o_fim_da_graca():
+    """Regressao: filtrar pelo fim da graca jogava fora anuidade que vence dentro
+    do periodo. A 12a do EP validado vence 09/11/2026, mas com 6 meses de graca o
+    fim caia em 2027 e a linha sumia."""
+    from quadro_global import _anuidades_estrangeiras
+    r = _anuidades_estrangeiras("DK", date(2015, 11, 9), date(2026, 7, 26),
+                                date(2026, 12, 31), kind="T3")
+    x = next(v for v in r if v.get("vencimento") == "2026-11-09")
+    assert x["fim_com_graca"] == "2027-05-09", "graca deve ser coluna separada"
+
+
+def test_jurisdicoes_novas_na_tabela():
+    import jurisdicoes as jur
+    regras = jur.carregar()
+    for j in ("UA", "PY", "UY", "EP-NAC"):
+        assert j in regras, f"{j} fora da tabela"
+        assert regras[j].projeta is False, "jurisdicao nova nao pode nascer revisada"
