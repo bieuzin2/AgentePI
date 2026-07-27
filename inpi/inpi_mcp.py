@@ -858,10 +858,24 @@ def inpi_prazos_carteira(
         if est["encerrado_em"]:
             encerrados += 1
         for p in _prazos_de(est, d_ini, escolhidos):
-            if p["prazo"] is None or d_ini.isoformat() <= p["prazo"] <= d_fim.isoformat():
+            if p["prazo"] is None:
+                prazos.append(p)
+                continue
+            # Anuidade tem JANELA (inicio ordinario -> fim complementar), nao data
+            # unica. Filtrar so pelo fim escondia as que ABREM dentro do periodo --
+            # exatamente as que ainda dao para pagar sem retribuicao adicional.
+            # Medido na Tecnored: 8 respostas em vez de 22.
+            ini = p.get("inicio")
+            if ini:
+                if ini <= d_fim.isoformat() and p["prazo"] >= d_ini.isoformat():
+                    prazos.append(p)
+            elif d_ini.isoformat() <= p["prazo"] <= d_fim.isoformat():
                 prazos.append(p)
 
-    prazos.sort(key=lambda x: (x["prazo"] or "9999", x["numero_inpi"]))
+    # Ordena pela data em que a acao COMECA a ser possivel (inicio ordinario), nao
+    # pelo fim: e a ordem em que o operador vai trabalhar.
+    prazos.sort(key=lambda x: (x.get("inicio") or x["prazo"] or "9999",
+                               x["prazo"] or "9999", x["numero_inpi"]))
     truncado = len(prazos) > limite_resultados
     por_tipo: dict[str, int] = {}
     for p in prazos:

@@ -539,3 +539,18 @@ def test_urgencia_e_mais_conservadora_para_prazo_fatal():
     assert _urgencia(90, "anuidade") == "verde"
     assert _urgencia(30, "anuidade") == "VERMELHO"
     assert _urgencia(None, "anuidade") == "sem data"
+
+
+@precisa_banco
+def test_janela_de_anuidade_e_intersecao_nao_so_o_fim():
+    """Regressao cara em uso real. Anuidade tem JANELA (inicio ordinario -> fim
+    complementar), nao data unica. Filtrar so pelo fim escondia as que ABREM dentro
+    do periodo -- justamente as que ainda dao para pagar sem retribuicao adicional.
+    Medido na carteira Tecnored, 26/07 a 31/12/2026: devolvia 8 de 22."""
+    r = m.inpi_prazos_carteira(titular="tecnored", tipos=["anuidade"],
+                               de="2026-07-26", ate="2026-12-31",
+                               limite_resultados=100)
+    assert r["resumo"]["prazos_encontrados"] >= 20, "voltou a filtrar so pelo fim"
+    # tem que haver anuidade que ainda nao entrou no prazo complementar
+    assert any(p["status"] != "prazo_complementar_corrente" for p in r["prazos"]), \
+        "so devolveu as que ja estao no fim do prazo"
