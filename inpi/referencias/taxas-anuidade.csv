@@ -1,0 +1,9 @@
+jurisdicao,ano,valor,moeda,vigente_desde,sobretaxa,fonte,confianca
+EP,3,725,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,4,885,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,5,1050,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,6,1215,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,7,1375,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,8,1540,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,9,1700,EUR,2026-04-01,50%,"EPO Rules relating to Fees, reajuste de 01/04/2026",fonte-oficial
+EP,10,1865,EUR,2026-04-01,50%,"EPO: valor constante do 10o ano em diante",fonte-oficial
