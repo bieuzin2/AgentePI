@@ -1392,6 +1392,89 @@ def inpi_movimentacao_escritorio(escritorio: str | None = None, de: str = "2000"
 
 
 @mcp.tool()
+def inpi_transferencias_titular(titular: str | None = None, de: str = "2000",
+                                ate: str = "2026", min_processos: int = 3,
+                                limite: int = 40) -> dict:
+    """De-para de TITULARIDADE: quem saiu e quem entrou como dono de uma carteira.
+
+    USE QUANDO: perguntarem sobre aquisicao, fusao, spin-off ou reorganizacao
+    societaria; ou para prospectar -- quem acabou de comprar carteira e lead quente.
+
+    Isto existe porque `depositantes` tem data_fim_depositante (126.087 linhas,
+    10,5%), o que permite reconstruir a sucessao: o titular com data de fim saiu, o
+    sem data de fim ficou. Sao 88.057 processos com troca.
+
+    O que aparece aqui e real e reconhecivel: Motorola Mobility -> Google Technology
+    Holdings (aquisicao), Johnson & Johnson Consumer -> Kenvue Brands (spin-off de
+    2023), Nippon Steel Sumitomo Metal -> Nippon Steel (mudanca de razao social).
+
+    ⚠️ NAO CONFUNDA com troca de escritorio. Isto e mudanca de DONO da patente, nao
+    de quem representa. Troca de procurador nao e rastreavel nesta base -- ver
+    inpi_movimentacao_escritorio.
+
+    Args:
+        titular: filtra por quem saiu OU quem entrou. Omita para o mercado inteiro.
+        de/ate: janela sobre a data de saida do titular anterior.
+        min_processos: volume minimo do par para entrar na lista.
+    """
+    cond = [
+        "s.df IS NOT NULL",
+        "e.di >= s.df - INTERVAL 30 DAY",
+        "s.org <> e.dst",
+        f"year(s.df) BETWEEN {int(de)} AND {int(ate)}",
+    ]
+    params: list = []
+    if titular:
+        chave_like = f"%{titular.strip().upper()}%"
+        cond.append("(upper(s.org) LIKE ? OR upper(e.dst) LIKE ?)")
+        params += [chave_like, chave_like]
+    params.append(min_processos)
+    params.append(max(1, min(limite, 200)))
+
+    linhas = _linhas(
+        f"""WITH x AS (
+              SELECT dp.numero_inpi, t.chave, dp.data_inicio_depositante AS di,
+                     dp.data_fim_depositante AS df, dp.depositante
+              FROM depositantes dp JOIN titulares t ON t.original = dp.depositante
+            ),
+            saiu AS (SELECT numero_inpi, chave AS org, df,
+                            arg_max(depositante, 1) AS org_nome
+                     FROM x WHERE df IS NOT NULL GROUP BY 1, 2, 3),
+            entrou AS (SELECT numero_inpi, chave AS dst, di,
+                              arg_max(depositante, 1) AS dst_nome
+                       FROM x WHERE df IS NULL GROUP BY 1, 2, 3)
+            SELECT s.org, any_value(s.org_nome) AS org_nome,
+                   e.dst, any_value(e.dst_nome) AS dst_nome,
+                   count(*) AS processos,
+                   min(s.df) AS primeira_transferencia,
+                   max(s.df) AS ultima_transferencia
+            FROM saiu s JOIN entrou e USING (numero_inpi)
+            WHERE {' AND '.join(cond)}
+            GROUP BY s.org, e.dst
+            HAVING count(*) >= ?
+            ORDER BY processos DESC LIMIT ?""",
+        params,
+    )
+    return {
+        "filtro": {"titular": titular, "de": de, "ate": ate},
+        "transferencias": len(linhas),
+        "processos_movidos": sum(l["processos"] for l in linhas),
+        "resultados": linhas,
+        "nota": (
+            "Reconstruido por data_fim_depositante. Mudanca de razao social e "
+            "aquisicao aparecem iguais aqui -- 'Nippon Steel Sumitomo Metal -> Nippon "
+            "Steel' e renomeacao, 'Motorola Mobility -> Google Technology Holdings' e "
+            "compra. Distinga pelo nome antes de tratar como operacao de mercado."
+        ),
+        "uso_comercial": (
+            "Titular que acabou de receber carteira e lead: ele tem patente nova para "
+            "administrar e pode nao ter escritorio definido no Brasil. Cruze com "
+            "inpi_prospeccao para ver se ja e representado por nos."
+        ),
+    }
+
+
+@mcp.tool()
 def inpi_conflitos_identidade(escritorio: str | None = None, limite: int = 30) -> dict:
     """Onde o NOME e o DOCUMENTO do procurador discordam. Base para revisao humana.
 
