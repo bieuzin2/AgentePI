@@ -6,6 +6,7 @@
 
 # dados brutos e derivados (a fonte de verdade sao os ZIPs da RPI, versionados fora do git)
 inpi/data/
+epo/data/
 *.duckdb
 *.duckdb.wal
 
