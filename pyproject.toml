@@ -7,7 +7,11 @@ name = "patentes"
 version = "0.1.0"
 description = "Agente de PI: acompanhamento processual INPI e EPO OPS via MCP"
 requires-python = ">=3.12"
-dependencies = ["pyyaml", "pypdf"]
+dependencies = ["pyyaml", "pypdf", "google-cloud-bigquery"]
 
 [tool.setuptools]
-packages = ["inpi", "epo", "vigilancia", "busca"]
+packages = ["inpi", "epo", "vigilancia", "busca", "landscape"]
+
+[tool.pytest.ini_options]
+markers = ["online: requer credencial/rede real, nao roda no fluxo padrao"]
+addopts = "-m \"not online\""
