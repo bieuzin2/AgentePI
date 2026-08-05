@@ -530,6 +530,22 @@ def test_relatorio_carrega_o_aviso_em_toda_aba(tmp_path):
         assert AVISO[:40] in texto, f"aba {nome} sem o aviso"
 
 
+@precisa_banco
+def test_relatorio_pdf_gera_arquivo_com_marca(tmp_path):
+    from relatorios import gerar_prazos_pdf
+
+    destino = tmp_path / "p.pdf"
+    r = gerar_prazos_pdf(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
+                         saida=str(destino))
+    assert destino.exists()
+    assert destino.stat().st_size > 0
+    assert r["arquivo"] == str(destino)
+    assert r["total_prazos"] >= 0
+    with destino.open("rb") as fh:
+        cabeca = fh.read(5)
+    assert cabeca == b"%PDF-"
+
+
 def test_urgencia_e_mais_conservadora_para_prazo_fatal():
     """Art. 33 e recurso nao tem prazo complementar: perdeu, perdeu. Por isso 90
     dias ja e vermelho, enquanto para anuidade 90 dias ainda e verde."""

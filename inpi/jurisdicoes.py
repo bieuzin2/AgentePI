@@ -60,6 +60,27 @@ class Regra:
         return self.confianca in CONFIANCA_QUE_PROJETA or revisado
 
 
+AVISO_NAO_REVISADO = (
+    "REGRA NAO REVISADA. Transcrita de legislacao, sem verificacao contra dado e sem "
+    "revisao de profissional habilitado -- nao ha nada nesta base que a confirme. A data "
+    "projetada a partir dela ORIENTA a conversa com o associado local; NUNCA controla "
+    "prazo sozinha. Para liberar o rotulo 'calculado', preencha 'revisado_por' e "
+    "'revisado_em' em referencias/anuidades-por-jurisdicao.csv."
+)
+
+
+def rotulo(r: Regra) -> str:
+    """A confianca de uma data projetada por esta regra. Fonte unica da verdade.
+
+    A trava nao BLOQUEIA a projecao -- ela ROTULA. Bloquear faria a linha sumir do
+    quadro, e caso que some e pior que caso com ressalva: o operador nao confere o
+    que nao ve. Os tres caminhos que projetam data estrangeira (descrever,
+    quadro_global e carteira_manual) chamam esta funcao, para que assinar uma
+    jurisdicao vire rotulo novo sem tocar em codigo.
+    """
+    return "calculado" if r.projeta else "estimado"
+
+
 def _int(v, padrao=None):
     v = (v or "").strip()
     return int(float(v)) if v else padrao
@@ -118,15 +139,11 @@ def descrever(jurisdicao: str) -> dict:
         "base_legal": r.base_legal,
         "confianca": r.confianca,
         "projeta_datas": r.projeta,
+        # O rotulo que TODA data projetada por esta regra vai carregar, em qualquer
+        # dos tres caminhos. Ver rotulo().
+        "confianca_da_projecao": rotulo(r),
         "aviso": (
-            f"Regra {r.confianca}. {r.fonte}"
-            if r.projeta
-            else "REGRA NAO REVISADA. Transcrita de legislacao, sem verificacao contra "
-                 "dado e sem revisao de profissional habilitado -- nao ha nada nesta "
-                 "base que a confirme. Serve para orientar a conversa com o associado "
-                 "local, NUNCA para controlar prazo. Para liberar a projecao de datas, "
-                 "preencha 'revisado_por' e 'revisado_em' em "
-                 "referencias/anuidades-por-jurisdicao.csv."
+            f"Regra {r.confianca}. {r.fonte}" if r.projeta else AVISO_NAO_REVISADO
         ),
     }
 

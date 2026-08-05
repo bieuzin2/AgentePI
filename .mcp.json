@@ -14,12 +14,6 @@
       "args": ["epo\\epo_mcp.py"],
       "env": {}
     },
-    "lens": {
-      "type": "stdio",
-      "command": ".venv\\Scripts\\python.exe",
-      "args": ["lens\\lens_mcp.py"],
-      "env": {}
-    },
     "inpi": {
       "type": "stdio",
       "command": ".venv\\Scripts\\python.exe",

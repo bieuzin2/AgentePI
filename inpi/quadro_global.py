@@ -102,10 +102,11 @@ def _anuidades_estrangeiras(pais: str, data_deposito: date | None, hoje: date,
                 "inicio": venc.isoformat(),
                 "vencimento": venc.isoformat(),
                 "fim_com_graca": fim.isoformat(),
-                "confianca": "estimado",
+                "confianca": jur.rotulo(r),
                 "data_base_usada": f"concessao {data_concessao.isoformat()}",
                 "nota": (f"1o pagamento pos-concessao ({r.dias_apos_concessao} dias). "
-                         f"{r.base_legal} — REGRA NAO REVISADA"),
+                         f"{r.base_legal}"
+                         + ("" if r.projeta else " — REGRA NAO REVISADA")),
             })
 
     for n, ini in _vencimentos(r, base):
@@ -125,10 +126,12 @@ def _anuidades_estrangeiras(pais: str, data_deposito: date | None, hoje: date,
                 "inicio": ini.isoformat(),
                 "vencimento": ini.isoformat(),
                 "fim_com_graca": fim.isoformat(),
-                "confianca": "estimado",
+                "confianca": jur.rotulo(r),
                 "data_base_usada": f"{r.data_base} {base.isoformat()}"
                                    + (" (via EP-nac)" if via_ep else ""),
-                "nota": f"{r.base_legal} — REGRA NAO REVISADA, confirme com o associado",
+                "nota": (f"{r.base_legal}"
+                         + ("" if r.projeta
+                            else " — REGRA NAO REVISADA, confirme com o associado")),
             })
     # Sem vencimento na janela nao vira linha: quem pergunta "o que vence ate X"
     # nao quer ver os casos que nao vencem.
@@ -276,8 +279,13 @@ def montar(titular: str, ate: str, hoje: str | None = None,
                     "pais": mb["pais"], "anuidade": f"{a['anuidade']}a anuidade",
                     "inicio": a["inicio"], "vencimento": a["vencimento"],
                     "fim_com_graca": a["fim_com_graca"],
-                    "situacao": "estimado pela regra do país",
-                    "confianca": "estimado", "fonte": a["nota"],
+                    # O rotulo vem da regra, nao do caminho: assinar uma jurisdicao
+                    # (revisado_por + revisado_em no CSV) vira 'calculado' aqui sem
+                    # tocar em codigo. Ver jurisdicoes.rotulo.
+                    "situacao": ("calculado pela regra do país"
+                                 if a["confianca"] == "calculado"
+                                 else "estimado pela regra do país"),
+                    "confianca": a["confianca"], "fonte": a["nota"],
                     "equivalente_br": num_br,
                 })
 

@@ -11,8 +11,8 @@ claude
 ```
 
 Rode dentro de `C:\Users\Gabriel\Desktop\Patentes`. Na primeira execução o Claude Code
-pede aprovação dos servidores MCP declarados em `.mcp.json` — aceite os quatro (`uspto`,
-`epo`, `inpi`, `lens`). Confira com `/mcp`: os quatro devem aparecer como *connected*.
+pede aprovação dos servidores MCP declarados em `.mcp.json` — aceite os três (`uspto`,
+`epo`, `inpi`). Confira com `/mcp`: os três devem aparecer como *connected*.
 
 **Depois de editar `.mcp.json` ou `.env`, reinicie o Claude Code.** Os servidores sobem
 uma vez, no início da sessão.
@@ -24,7 +24,12 @@ uma vez, no início da sessão.
 | `uspto` | patentes e pedidos dos EUA, texto integral, PTAB | nenhuma (PPUBS é público) |
 | `epo` | **BR, CN, EP e +100 jurisdições** via INPADOC/DOCDB | `EPO_OPS_KEY` + `EPO_OPS_SECRET` ✅ |
 | `inpi` | **Brasil**: texto, andamento e 5,3 M despachos, 1972→hoje | nenhuma (base local) ✅ |
-| `lens` | acervo global de patentes; NPL (academia) | `LENS_TOKEN` ⚠️ trial, só Patent API |
+
+O `lens` **saiu do escopo**. O código continua em `lens/`, desligado — a decisão é
+reversível. Razão: o trial só liberou a Patent API, e patente o EPO OPS já cobre de graça,
+com dado oficial e família INPADOC (`docs/aceite/A3-lens.md`). O único diferencial seria a
+Scholarly API (literatura não-patentária), que devolveu 401. Para religar, recoloque o
+bloco `lens` no `.mcp.json`.
 
 Faltando só `USPTO_API_KEY` (destrava andamento e PTAB dos EUA — a busca funciona sem ela).
 
@@ -73,6 +78,48 @@ Qual o andamento do BR 10 2022 010731 2? Traz todos os despachos.
 ```
 Quais pedidos a UFERSA depositou em embalagem biodegradável?
 ```
+
+### Prazos de um cliente, no mundo todo
+
+A carteira é uma entidade persistente, em `inpi/data/carteira.duckdb`. Carregue uma vez,
+pergunte quantas vezes quiser.
+
+```
+Essa é a carteira da Tecnored: <cole a lista, ou o caminho do XLSX/CSV>
+```
+
+```
+Levanta sozinho o que a base do INPI conhece da Tecnored, e expande a família.
+```
+
+```
+Quais os prazos da Tecnored até dezembro? Quero Brasil e exterior, incluindo
+os países pequenos.
+```
+
+Quatro fontes alimentam a mesma tabela, cada linha carimbada com a origem. Quando
+discordam, a divergência **aparece**; não é resolvida por sobrescrita.
+
+| Fonte | O que só ela vê |
+| :--- | :--- |
+| lista do escritório | a carteira inteira de uma vez, e o número com que cada associado trabalha |
+| base do INPI | os casos brasileiros |
+| família INPADOC | os equivalentes fora da Europa — AU, CA, CN, IN, ZA… |
+| **status legal INPADOC** | **as validações europeias, inclusive nos países do Acordo de Londres** |
+
+A última é a que fechou o buraco. Em **BE, FR, GB, GR, IE, IT, LU, NL e SE** o Acordo de
+Londres dispensa a tradução, a validação de um EP não gera publicação nacional e **não
+existe membro de família** — 46 de 59 casos de uma carteira real eram invisíveis à busca
+por família. Mas o escritório nacional reporta ao EPO o pagamento da anuidade (evento
+`PGFP`), e isso está no serviço de status legal.
+
+Medido na família `EP14874476`: dos 15 estados europeus do docketing, o status legal
+encontrou **os 15**, os 9 de Londres inclusive — e encontrou **PT com anuidade paga, que o
+docketing não tinha**. Também marcou CH e LT como caducados (`PG25`), que por isso ficam
+fora da projeção de anuidade.
+
+Toda resposta de `carteira_panorama` traz uma seção **`lacunas`**. Leia antes de tratar o
+quadro como completo.
 
 ### Controle de carteira e prazos
 
@@ -130,7 +177,7 @@ interno]` — não use em entregável de cliente enquanto a assinatura não esti
 ## Testar sem abrir o Claude
 
 ```bash
-.venv/Scripts/python.exe -m pytest epo lens inpi -q
+.venv/Scripts/python.exe -m pytest epo inpi -q
 ```
 
 91 testes. Testam o que quebra em silêncio: achatamento do JSON do EPO, normalização de
@@ -141,18 +188,22 @@ processo cujo indeferimento foi revertido por recurso.
 ## Estrutura
 
 ```
-.mcp.json                 fiação dos quatro servidores
+.mcp.json                 fiação dos três servidores
 .env                      credenciais (gitignored; modelo em .env.example)
 .claude/skills/analista-patentes-inpi/
     SKILL.md              o método de exame
     references/           protocolo anti-alucinação, sintaxe BRS e CQL, claim chart, LPI
-epo/ lens/                servidores MCP + testes
+epo/                      servidor MCP do EPO OPS + testes
+lens/                     desligado — ver "O que está ligado"
 inpi/  ingest.py          download e carga dos CSVs do INPI no DuckDB
-       inpi_mcp.py        servidor MCP da base brasileira (15 tools) + testes
+       inpi_mcp.py        servidor MCP da base brasileira + da carteira
+       carteira.py        a carteira do cliente: ingestão, descoberta e panorama
        anuidades.py       projeção sob os arts. 40, 84, 85 e 87 da LPI
        jurisdicoes.py     regras de manutenção no exterior e fase nacional PCT
        escritorios.py     normalização de grafia de escritório
        data/              CSVs e .duckdb (gitignored, ~3,3 GB)
+                          carteira.duckdb é banco à parte, de propósito:
+                          ingest.py recria inpi.duckdb do zero a cada carga
        referencias/       fontes, prazos observados, apelidos, jurisdições
 docs/  capacidades.md     o que o agente responde e o que não
        lgpd.md            decisão sobre dado pessoal em prospecção

@@ -22,6 +22,17 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 RAIZ = Path(__file__).resolve().parent
 sys.path.insert(0, str(RAIZ))
@@ -32,6 +43,253 @@ AVISO = (
     "foi pago. Use como lista de conferência contra o controle de prazos do escritório "
     "— não substitui o docketing nem o procurador responsável."
 )
+
+CM_AZUL = colors.HexColor("#0b2f4f")
+CM_CIANO = colors.HexColor("#00a3e0")
+CM_CINZA = colors.HexColor("#6b7280")
+CM_CLARO = colors.HexColor("#eff6fb")
+CM_FUNDO = colors.HexColor("#f8fafc")
+CM_VERMELHO = colors.HexColor("#b91c1c")
+CM_VERDE = colors.HexColor("#047857")
+CM_AMARELO = colors.HexColor("#92400e")
+
+PDF_TITULO = ParagraphStyle(
+    "CM_TITULO",
+    parent=getSampleStyleSheet()["Title"],
+    fontName="Helvetica-Bold",
+    fontSize=18,
+    leading=22,
+    textColor=CM_AZUL,
+    spaceAfter=6,
+)
+PDF_SUBTITULO = ParagraphStyle(
+    "CM_SUBTITULO",
+    parent=getSampleStyleSheet()["BodyText"],
+    fontName="Helvetica",
+    fontSize=9,
+    leading=12,
+    textColor=CM_CINZA,
+    spaceAfter=10,
+)
+PDF_SECAO = ParagraphStyle(
+    "CM_SECAO",
+    parent=getSampleStyleSheet()["Heading2"],
+    fontName="Helvetica-Bold",
+    fontSize=12,
+    leading=14,
+    textColor=CM_AZUL,
+    spaceBefore=10,
+    spaceAfter=6,
+)
+PDF_BODY = ParagraphStyle(
+    "CM_BODY",
+    parent=getSampleStyleSheet()["BodyText"],
+    fontName="Helvetica",
+    fontSize=9,
+    leading=12,
+    textColor=colors.black,
+)
+PDF_BODY_SMALL = ParagraphStyle(
+    "CM_BODY_SMALL",
+    parent=PDF_BODY,
+    fontSize=8,
+    leading=10,
+)
+PDF_CAB = ParagraphStyle(
+    "CM_CAB",
+    parent=PDF_BODY,
+    fontName="Helvetica-Bold",
+    fontSize=8,
+    leading=9,
+    textColor=colors.white,
+)
+
+
+
+def _p(texto: str, estilo: ParagraphStyle = PDF_BODY) -> Paragraph:
+    return Paragraph((texto or "").replace("\n", "<br/>"), estilo)
+
+
+
+def _resumo_kpis(prazos: list[dict]) -> dict[str, int]:
+    return {
+        "total": len(prazos),
+        "vermelho": sum(1 for p in prazos if p.get("urgencia") == "VERMELHO"),
+        "amarelo": sum(1 for p in prazos if p.get("urgencia") == "amarelo"),
+        "verde": sum(1 for p in prazos if p.get("urgencia") == "verde"),
+        "sem_data": sum(1 for p in prazos if p.get("prazo") is None),
+        "clientes": len({p.get("cliente") or "(sem titular)" for p in prazos}),
+    }
+
+
+
+def _linha_periodo(p: dict) -> list[str]:
+    return [
+        str(p.get("numero_inpi") or ""),
+        str(p.get("cliente") or ""),
+        str(p.get("titulo") or ""),
+        str(p.get("descricao") or ""),
+        str(p.get("prazo") or ""),
+        str(p.get("urgencia") or ""),
+    ]
+
+
+
+def _estilo_pdf(destino: Path) -> SimpleDocTemplate:
+    return SimpleDocTemplate(
+        str(destino),
+        pagesize=A4,
+        rightMargin=16 * mm,
+        leftMargin=16 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+    )
+
+
+
+def _header_footer(canvas, doc, criterio: str) -> None:
+    canvas.saveState()
+    width, height = A4
+    canvas.setFillColor(CM_AZUL)
+    canvas.rect(0, height - 18 * mm, width, 18 * mm, stroke=0, fill=1)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 12)
+    canvas.drawString(16 * mm, height - 11 * mm, "ClarkeModet")
+    canvas.setFont("Helvetica", 7.5)
+    canvas.drawRightString(width - 16 * mm, height - 11 * mm, criterio[:110])
+    canvas.setStrokeColor(CM_CIANO)
+    canvas.setLineWidth(0.8)
+    canvas.line(16 * mm, height - 19 * mm, width - 16 * mm, height - 19 * mm)
+    canvas.setFillColor(CM_CINZA)
+    canvas.setFont("Helvetica", 8)
+    canvas.drawString(16 * mm, 10 * mm, "Relatório gerado pelo agente de patentes")
+    canvas.drawRightString(width - 16 * mm, 10 * mm, f"Página {doc.page}")
+    canvas.restoreState()
+
+
+
+def gerar_prazos_pdf(
+    escritorio: str | None = None,
+    titular: str | None = None,
+    numeros: list[str] | None = None,
+    de: str | None = None,
+    ate: str | None = None,
+    saida: str | None = None,
+) -> dict:
+    """Gera PDF com resumo executivo e tabela de prazos."""
+    import inpi_mcp as mcp_mod
+
+    d_ini = date.fromisoformat(de) if de else date.today()
+    d_fim = date.fromisoformat(ate) if ate else mcp_mod.anu._mais_meses(d_ini, 3)
+
+    r = mcp_mod.inpi_prazos_carteira(
+        titular=titular,
+        procurador=escritorio,
+        numeros=numeros,
+        de=d_ini.isoformat(),
+        ate=d_fim.isoformat(),
+        limite_resultados=20000,
+    )
+    if r.get("erro"):
+        return r
+
+    prazos = r["prazos"]
+    _enriquece(prazos, mcp_mod.con())
+    for p in prazos:
+        pz = p.get("prazo")
+        p["dias"] = (date.fromisoformat(pz) - d_ini).days if pz else None
+        p["urgencia"] = _urgencia(p["dias"], p["tipo"])
+
+    quem = escritorio or titular or f"{len(numeros or [])} processos"
+    criterio = (f"Prazos de {quem} — {d_ini.strftime('%d/%m/%Y')} a "
+                f"{d_fim.strftime('%d/%m/%Y')} — gerado em "
+                f"{date.today().strftime('%d/%m/%Y')}")
+
+    destino = Path(saida) if saida else (
+        RAIZ.parent / "docs" / "relatorios" /
+        f"prazos_{(escritorio or titular or 'carteira').lower().replace(' ', '_')}"
+        f"_{d_ini:%Y%m}_{d_fim:%Y%m}.pdf"
+    )
+    destino.parent.mkdir(parents=True, exist_ok=True)
+
+    resumo = _resumo_kpis(prazos)
+    story = [
+        _p("ClarkeModet", PDF_TITULO),
+        _p(criterio, PDF_SUBTITULO),
+        _p("Resumo executivo", PDF_SECAO),
+        Table(
+            [
+                [
+                    _p("Total de prazos", PDF_CAB),
+                    _p("Vermelho", PDF_CAB),
+                    _p("Amarelo", PDF_CAB),
+                    _p("Verde", PDF_CAB),
+                    _p("Sem data", PDF_CAB),
+                    _p("Clientes", PDF_CAB),
+                ],
+                [
+                    resumo["total"], resumo["vermelho"], resumo["amarelo"],
+                    resumo["verde"], resumo["sem_data"], resumo["clientes"],
+                ],
+            ],
+            colWidths=[28 * mm, 22 * mm, 22 * mm, 22 * mm, 22 * mm, 22 * mm],
+        ),
+        Spacer(1, 6),
+        _p(AVISO, PDF_BODY_SMALL),
+        _p("Top 20 prazos", PDF_SECAO),
+    ]
+
+    top = [
+        ["Processo", "Cliente", "Título", "Prazo", "Urgência", "Base legal"],
+        *[
+            [
+                p.get("numero_inpi") or "",
+                p.get("cliente") or "",
+                p.get("titulo") or "",
+                p.get("prazo") or "",
+                p.get("urgencia") or "",
+                p.get("base_legal") or "",
+            ]
+            for p in prazos[:20]
+        ],
+    ]
+    tabela = Table(top, repeatRows=1, colWidths=[22 * mm, 34 * mm, 48 * mm, 22 * mm, 18 * mm, 40 * mm])
+    tabela.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), CM_AZUL),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("LEADING", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.35, CM_CINZA),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [CM_FUNDO, CM_CLARO]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(tabela)
+
+    if len(prazos) > 20:
+        story += [Spacer(1, 6), _p(f"{len(prazos) - 20} prazos adicionais omitidos do PDF.", PDF_BODY_SMALL)]
+
+    pdf = _estilo_pdf(destino)
+    pdf.build(story, onFirstPage=lambda c, d: _header_footer(c, d, criterio), onLaterPages=lambda c, d: _header_footer(c, d, criterio))
+
+    return {
+        "arquivo": str(destino),
+        "criterio": r["criterio"],
+        "total_prazos": len(prazos),
+        "por_tipo": r["resumo"]["por_tipo"],
+        "por_urgencia": {
+            u: sum(1 for p in prazos if p["urgencia"] == u)
+            for u in ("VERMELHO", "amarelo", "verde")
+        },
+        "clientes": resumo["clientes"],
+        "truncado": r.get("truncado", False),
+    }
+
+
 
 # Faixas de urgencia. Art. 33 e recurso sao fatais e nao tem prazo complementar,
 # por isso entram em vermelho ja a 90 dias.

@@ -171,6 +171,166 @@ def test_sem_resultado_reconhece_404():
     assert m._sem_resultado(Exception("500 Server Error")) is False
 
 
+class _Resp:
+    content = b"x"
+
+    def __init__(self, payload):
+        self._p = payload
+
+    def json(self):
+        return self._p
+
+
+class _Cli:
+    def __init__(self, payload):
+        self._p = payload
+
+    def published_data(self, **kw):
+        return _Resp(self._p)
+
+    def register(self, **kw):
+        return _Resp(self._p)
+
+
+REGISTER_EP = {"ops:world-patent-data": {"ops:register-search": {
+    "reg:register-documents": {"reg:register-document": {
+        "reg:bibliographic-data": {
+            "reg:designation-of-states": [
+                {"reg:designation-pct": {"reg:regions": {"reg:country": [
+                    {"$": "AT"}, {"$": "BE"}, {"$": "FR"}, {"$": "GB"}, {"$": "NL"},
+                ]}}},
+            ],
+            # Formato real: o Register prefixa TUDO com 'reg:'. A versao sem prefixo
+            # passava no teste e falhava contra a API -- foi assim que a mencao de
+            # concessao voltava None em EP3088824, que tem B1 em 20181128.
+            "reg:publication-reference": [
+                {"reg:document-id": {"reg:country": {"$": "EP"},
+                                     "reg:doc-number": {"$": "3088824"},
+                                     "reg:kind": {"$": "A1"}, "reg:date": {"$": "20161102"}}},
+                {"reg:document-id": {"reg:country": {"$": "EP"},
+                                     "reg:doc-number": {"$": "3088824"},
+                                     "reg:kind": {"$": "B1"}, "reg:date": {"$": "20181128"}}},
+            ],
+        },
+        "reg:ep-patent-statuses": {"reg:ep-patent-status": [
+            {"@change-date": "20191004", "@status-code": "7",
+             "$": "No opposition filed within time limit"},
+            {"@change-date": "20181026", "@status-code": "8",
+             "$": "The patent has been granted"},
+        ]},
+    }}}}}
+
+
+def test_register_extrai_estados_designados(monkeypatch):
+    """O buraco do Acordo de Londres: em BE, FR, GB, NL a validacao nao gera
+    publicacao nacional, entao nao ha membro INPADOC. O Register e a unica fonte
+    que ao menos diz que esses estados foram designados."""
+    _liga(monkeypatch, REGISTER_EP)
+    r = m.epo_register("EP3088824")
+    assert r["encontrado"] is True
+    assert r["estados_designados"] == ["AT", "BE", "FR", "GB", "NL"]
+    # a mencao de concessao e a publicacao do B1 -- dela corre o prazo do art. 65 EPC.
+    # Conferido ao vivo: EP3088824 devolve 20181128, que e exatamente a coluna
+    # 'concessao' do docketing da Tecnored.
+    assert r["mencao_de_concessao"] == "20181128"
+    assert r["situacao"] == "No opposition filed within time limit"
+    assert r["situacao_em"] == "20191004", "vale a situacao mais recente"
+    # o aviso tem que desmentir a leitura perigosa: designado != validado
+    assert "NAO E VALIDACAO" in r["aviso"]
+
+
+def test_register_recusa_o_que_nao_e_ep():
+    r = m.epo_register("BR-102022010731-A2")
+    assert r["erro"] is True
+
+
+def test_register_404_nao_vira_falha_de_sistema(monkeypatch):
+    class _Cli404:
+        def register(self, **kw):
+            raise Exception("404 Client Error: Not Found for url: ...")
+
+    monkeypatch.setattr(m, "cliente", lambda: _Cli404())
+    r = m.epo_register("EP9999999")
+    assert r["encontrado"] is False
+    assert r["estados_designados"] == []
+
+
+def _liga(monkeypatch, payload):
+    monkeypatch.setattr(m, "cliente", lambda: _Cli(payload))
+    monkeypatch.setattr(m, "_loga_quota", lambda *a: None)
+
+
+def test_texto_integral_extrai_descricao(monkeypatch):
+    """Regressao: 'description' caia no else e voltava texto vazio, com
+    disponivel=False. Vazio aqui e lido como 'o documento nao revela nada', que e
+    exatamente a conclusao que o protocolo de citacao proibe."""
+    _liga(monkeypatch, {"ops:world-patent-data": {"ftxt:fulltext-documents": {
+        "ftxt:fulltext-document": {"description": {"p": [
+            {"@num": "0001", "$": "Primeiro paragrafo."},
+            {"@num": "0002", "$": "Segundo paragrafo."},
+        ]}}}}})
+    r = m.epo_texto_integral("EP1000000A1", secao="description")
+    assert r["disponivel"] is True
+    # paragrafo a paragrafo, nao '; ' -- a ancora tripla cita '[0034]'
+    assert r["texto"] == "Primeiro paragrafo.\n\nSegundo paragrafo."
+
+
+def test_texto_integral_extrai_resumo_preferindo_ingles(monkeypatch):
+    """'abstract' vem do endpoint biblio, em outra arvore, e o mesmo documento
+    traz varias linguas."""
+    _liga(monkeypatch, {"ops:world-patent-data": {"exchange-documents": {
+        "exchange-document": {"abstract": [
+            {"@lang": "de", "p": {"$": "Eine Vorrichtung."}},
+            {"@lang": "en", "p": {"$": "An apparatus for X."}},
+        ]}}}})
+    r = m.epo_texto_integral("EP1000000A1", secao="abstract")
+    assert r["texto"] == "An apparatus for X."
+    assert r["bruto_json"] is None
+
+
+def test_texto_integral_resumo_sem_ingles_nao_volta_vazio(monkeypatch):
+    """Texto em alemao e melhor que campo vazio lido como ausencia de revelacao."""
+    _liga(monkeypatch, {"ops:world-patent-data": {"exchange-documents": {
+        "exchange-document": {"abstract": {"@lang": "de", "p": {"$": "Eine Vorrichtung."}}}}}})
+    assert m.epo_texto_integral("EP1000000A1", secao="abstract")["texto"] == "Eine Vorrichtung."
+
+
+def test_quota_soma_os_dois_formatos_de_carimbo(tmp_path, monkeypatch):
+    """Regressao de leitura: epo_mcp grava ISO 8601 e familia_epo grava epoch, no
+    MESMO arquivo. Ler so um dos formatos subestima o consumo -- e subestimar cota
+    e descobrir o teto no dia do prazo."""
+    from datetime import datetime, timedelta, timezone
+
+    agora = datetime.now(timezone.utc)
+    log = tmp_path / "quota.log"
+    log.write_text(
+        f"{agora.isoformat()}\tbusca\t1000\n"
+        f"{agora.timestamp():.0f}\tfamilia:102022010731\t2000\n"
+        f"{(agora - timedelta(days=30)).isoformat()}\tbusca\t999999999\n"
+        "linha corrompida\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(m, "QUOTA_LOG", log)
+    r = m.epo_quota(dias=7)
+    assert r["bytes"] == 3000, "os dois formatos contam; o de 30 dias atras nao"
+    assert r["chamadas"] == 2
+    assert r["linhas_ilegiveis"] == 1
+    assert r["bytes_por_operacao"] == {"familia": 2000, "busca": 1000}
+    assert r["alerta"] == ""
+
+
+def test_quota_alerta_perto_do_teto(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    log = tmp_path / "quota.log"
+    log.write_text(
+        f"{datetime.now(timezone.utc).isoformat()}\tfamilia\t{int(3.6 * 1024**3)}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(m, "QUOTA_LOG", log)
+    assert "ACIMA DE 80%" in m.epo_quota()["alerta"]
+
+
 def test_cliente_falha_alto_sem_credencial(monkeypatch):
     monkeypatch.delenv("EPO_OPS_KEY", raising=False)
     monkeypatch.delenv("EPO_OPS_SECRET", raising=False)

@@ -431,8 +431,39 @@ def epo_texto_integral(referencia: str, secao: str = "claims") -> dict:
             if isinstance(c, dict)
         ]
         texto = "\n\n".join(p for p in partes if p)
+    elif secao == "description":
+        # Mesma arvore das reivindicacoes, outro no. A descricao vem em <p>
+        # numerados -- que sao justamente a localizacao que a ancora tripla exige
+        # ('[0034]'), entao juntar por paragrafo, nunca por '; '.
+        docs = _lista(corpo.get("ftxt:fulltext-documents", {}).get("ftxt:fulltext-document"))
+        partes = []
+        for d in docs:
+            if not isinstance(d, dict):
+                continue
+            desc = d.get("description")
+            if isinstance(desc, dict) and desc.get("p") is not None:
+                partes.extend(_texto(p) for p in _lista(desc["p"]))
+            else:
+                partes.append(_texto(desc))
+        texto = "\n\n".join(p for p in partes if p)
     else:
-        texto = ""
+        # 'abstract' nao tem endpoint proprio: vem do biblio, em outra arvore.
+        docs = _lista(corpo.get("exchange-documents", {}).get("exchange-document"))
+        partes = []
+        for d in docs:
+            if not isinstance(d, dict):
+                continue
+            abs_ = _lista(d.get("abstract"))
+            # O mesmo documento traz o resumo em varias linguas; 'en' e a que da
+            # para citar. Sem 'en', fica a primeira -- melhor texto em alemao do
+            # que campo vazio lido como 'o documento nao revela nada'.
+            en = next((a for a in abs_ if isinstance(a, dict) and a.get("@lang") == "en"), None)
+            for a in ([en] if en else abs_):
+                if isinstance(a, dict) and a.get("p") is not None:
+                    partes.extend(_texto(p) for p in _lista(a["p"]))
+                else:
+                    partes.append(_texto(a))
+        texto = "\n\n".join(p for p in partes if p)
 
     return {
         "referencia": referencia,
@@ -441,6 +472,335 @@ def epo_texto_integral(referencia: str, secao: str = "claims") -> dict:
         "texto": texto,
         # Escape hatch: quando o achatamento nao pegar tudo, o bruto continua la.
         "bruto_json": bruto if not texto else None,
+    }
+
+
+def _folhas(no: Any, caminho: tuple = ()):
+    """Todo par (caminho, valor) da arvore. O OPS alterna dict e lista para o mesmo
+    campo e prefixa com 'reg:' de forma irregular -- caminhar e mais barato que
+    acertar o formato exato de cada variante."""
+    if isinstance(no, dict):
+        for k, v in no.items():
+            yield from _folhas(v, caminho + (k,))
+    elif isinstance(no, list):
+        for x in no:
+            yield from _folhas(x, caminho)
+    else:
+        yield caminho, no
+
+
+def _ids_publicacao(no: Any):
+    """Dicts que identificam uma publicacao (tem 'kind' e 'date').
+
+    O Register prefixa as chaves com 'reg:' e o published-data nao. Comparar pelo
+    sufixo cobre os dois sem um ramo por servico.
+    """
+    if isinstance(no, dict):
+        por_sufixo = {str(x).split(":")[-1]: x for x in no}
+        if "kind" in por_sufixo and "date" in por_sufixo:
+            yield {"kind": no[por_sufixo["kind"]], "date": no[por_sufixo["date"]]}
+        for v in no.values():
+            yield from _ids_publicacao(v)
+    elif isinstance(no, list):
+        for x in no:
+            yield from _ids_publicacao(x)
+
+
+def _acha(no: Any, chave: str) -> Any:
+    """Primeiro valor cuja chave termina em 'chave', em qualquer profundidade.
+
+    Poupa cravar o caminho inteiro ('ops:register-search' / 'reg:register-documents'
+    / 'reg:register-document' / ...), que muda entre servicos do OPS.
+    """
+    if isinstance(no, dict):
+        for k, v in no.items():
+            if str(k).split(":")[-1] == chave:
+                return v
+        for v in no.values():
+            achado = _acha(v, chave)
+            if achado is not None:
+                return achado
+    elif isinstance(no, list):
+        for x in no:
+            achado = _acha(x, chave)
+            if achado is not None:
+                return achado
+    return None
+
+
+_RE_PAIS = re.compile(r"^[A-Z]{2}$")
+
+
+@mcp.tool()
+def epo_register(referencia: str) -> dict:
+    """Estados designados e mencao de concessao de um EP, pelo European Patent Register.
+
+    USE QUANDO: precisar saber ONDE uma patente europeia pode ter sido validada.
+
+    POR QUE ISTO IMPORTA: em BE, FR, GB, GR, IE, IT, LU, NL e SE o Acordo de Londres
+    dispensa a traducao, entao a validacao NAO gera publicacao nacional -- nao existe
+    membro de familia INPADOC e nenhuma busca por familia acha o caso. Num cliente
+    real, 46 de 59 casos eram invisiveis assim.
+
+    ⚠️ LEIA ANTES DE USAR 'estados_designados': desde 2009 o deposito designa TODOS os
+    estados contratantes de uma vez, entao esta lista vem com ~39 paises em qualquer
+    EP. Ela e o TETO do que poderia ter sido validado -- NAO e lista de candidatos, e
+    muito menos de validacoes. Tratar os 39 como carteira inventa 39 casos por
+    patente. O que a lista serve para dizer e uma coisa so: se o associado mencionar
+    validacao num estado, ele estava designado.
+
+    O QUE DE FATO SE APROVEITA AQUI e 'mencao_de_concessao': e a publicacao do B1 no
+    Boletim Europeu, e dela corre o prazo de validacao nacional (art. 65 EPC, em regra
+    3 meses). Esse prazo e calculavel SEM depender de publicacao nacional -- e por
+    isso e o unico prazo dos paises de Londres que da para projetar.
+
+    LIMITES: so cobre pedidos EP (e PCT designando o EPO) e so aceita formato epodoc.
+    O Register nao publica em que estados houve validacao efetiva; nenhuma fonte
+    publica isso. So a lista do escritorio sabe.
+    """
+    ref = re.sub(r"[\s.\-/]", "", (referencia or "").upper())
+    if not ref.startswith("EP"):
+        return {
+            "erro": True,
+            "mensagem": (
+                f"'{referencia}' nao e um EP. O European Patent Register so cobre "
+                "pedidos europeus e PCT que designam o EPO."
+            ),
+        }
+    try:
+        resp = cliente().register(
+            reference_type="publication", input=epo_ops.models.Epodoc(ref)
+        )
+    except Exception as e:
+        if _sem_resultado(e):
+            return {"referencia": referencia, "encontrado": False, "estados_designados": [],
+                    "mensagem": ("O Register nao tem este documento. Ausencia aqui NAO e "
+                                 "prova de que nao houve designacao.")}
+        raise
+
+    _loga_quota("register", resp)
+    corpo = resp.json().get("ops:world-patent-data", {})
+
+    designados = sorted({
+        v for caminho, v in _folhas(corpo)
+        if any("designation-of-states" in str(k) for k in caminho)
+        # o valor pode vir cru ou dentro de {'$': 'AT'} -- olha os dois ultimos passos
+        and any(str(k).endswith("country") for k in caminho[-2:])
+        and _RE_PAIS.match(str(v))
+    })
+
+    # A mencao de concessao e a publicacao do B1 no Boletim Europeu -- e dela que
+    # corre o prazo de validacao nacional.
+    concessoes = sorted({
+        _texto(d.get("date")) for d in _ids_publicacao(corpo)
+        if _texto(d.get("kind")).upper().startswith("B") and _texto(d.get("date"))
+    })
+
+    # Situacao mais recente do Register ('The patent has been granted', 'No opposition
+    # filed within time limit', 'Grant of patent is intended', ...).
+    estados_ep = sorted(
+        (
+            (str(d.get("@change-date") or ""), _texto(d.get("$")))
+            for d in _lista(_acha(corpo, "ep-patent-status"))
+            if isinstance(d, dict)
+        ),
+        reverse=True,
+    )
+
+    # Data de deposito do EP: e a data-base da anuidade em todo estado validado, e
+    # sem ela a validacao entra na carteira sem prazo nenhum.
+    app = _acha(corpo, "application-reference")
+    deposito = next(
+        (d["date"] for d in _ids_publicacao({"x": app}) if _texto(d.get("date"))), None
+    )
+    if not deposito:
+        deposito = next((_texto(v) for cam, v in _folhas(app or {})
+                         if str(cam[-1]).endswith("date") or
+                         (len(cam) > 1 and str(cam[-2]).endswith("date"))), None)
+
+    return {
+        "referencia": referencia,
+        "encontrado": True,
+        "data_deposito": _texto(deposito) or None,
+        "mencao_de_concessao": concessoes[0] if concessoes else None,
+        "situacao": estados_ep[0][1] if estados_ep else None,
+        "situacao_em": estados_ep[0][0] if estados_ep else None,
+        "estados_designados": designados,
+        "total_designados": len(designados),
+        "aviso": (
+            "DESIGNACAO NAO E VALIDACAO, E NAO E NEM CANDIDATURA. Desde 2009 o deposito "
+            f"designa todos os estados contratantes de uma vez -- por isso vieram "
+            f"{len(designados)}. A lista e o TETO do que poderia ter sido validado. "
+            "Nenhuma fonte publica diz onde houve validacao efetiva: nos paises do "
+            "Acordo de Londres (BE, FR, GB, GR, IE, IT, LU, NL, SE) a validacao nao "
+            "gera publicacao nacional. So a lista do escritorio sabe. O dado acionavel "
+            "aqui e 'mencao_de_concessao', de onde corre o prazo do art. 65 EPC."
+        ),
+        "bruto_json": None if designados else json.dumps(corpo, ensure_ascii=False),
+    }
+
+
+_RE_REF_PAIS = re.compile(r"Ref Country Code\s+([A-Z]{2})")
+
+# Codigos INPADOC que o proprio escritorio nacional reporta ao EPO. Sao os unicos
+# que dizem alguma coisa sobre o pais, e nao sobre o processo europeu.
+CADUCOU = "PG25"      # LAPSED IN A CONTRACTING STATE
+TAXA_PAGA = "PGFP"    # ANNUAL FEE PAID TO NATIONAL OFFICE
+ATO_NACIONAL = "REG"  # REFERENCE TO A NATIONAL CODE
+
+
+@mcp.tool()
+def epo_status_legal(referencia: str, apenas_nacionais: bool = True) -> dict:
+    """Status legal INPADOC de um documento, com os eventos separados POR PAIS.
+
+    USE QUANDO: precisar saber onde a patente ainda esta viva, onde caducou, e onde
+    houve ato nacional depois da concessao.
+
+    POR QUE IMPORTA PARA A VALIDACAO EUROPEIA: nos paises do Acordo de Londres a
+    validacao nao gera publicacao nacional, entao a familia INPADOC nao mostra nada.
+    Mas o escritorio nacional REPORTA eventos ao EPO, e eles aparecem aqui. Num EP
+    real vieram atos nacionais de IE, NL, SE, GR, DK, PT e ES -- paises que a busca
+    por familia nao enxerga. Isto e evidencia, nao suposicao.
+
+    COMO LER cada classificacao:
+      caducou        PG25, o escritorio nacional comunicou a extincao. E afirmacao.
+      taxa_paga      PGFP, anuidade paga ao escritorio nacional. E afirmacao.
+      ato_nacional   REG, houve ato no pais -- mas o codigo nacional pode significar
+                     tanto registro da traducao quanto extincao (em CH, 'PL' e
+                     lapso). NAO leia como 'esta viva': leia como 'aconteceu algo la,
+                     confira o codigo'.
+
+    REGRA DE OURO, a mesma do resto do projeto: isto e registro do PASSADO. O INPADOC
+    nao publica 'vence em novembro'. Ausencia de evento nao e prova de ausencia de
+    direito -- e frequentemente so atraso do escritorio nacional.
+
+    Args:
+        apenas_nacionais: mantem so os eventos que carregam pais (PG25, PGFP, REG).
+            Desligue para ver tambem a prosecucao europeia (exame, concessao, oposicao).
+    """
+    try:
+        resp = cliente().legal(reference_type="publication", input=_entrada(referencia))
+    except Exception as e:
+        if _sem_resultado(e):
+            return {"referencia": referencia, "encontrado": False, "eventos": [],
+                    "mensagem": ("O INPADOC nao tem status legal deste documento. "
+                                 "Ausencia NAO e prova de que nao ha direito vigente.")}
+        raise
+
+    _loga_quota("legal", resp)
+    corpo = resp.json().get("ops:world-patent-data", {})
+
+    eventos = []
+    for e in _lista(_acha(corpo, "legal")):
+        if not isinstance(e, dict):
+            continue
+        pre = "  ".join(
+            _texto(p.get("$")) for p in _lista(e.get("ops:pre")) if isinstance(p, dict)
+        )
+        achado = _RE_REF_PAIS.search(pre)
+        codigo = str(e.get("@code") or "").strip()
+        if apenas_nacionais and not achado:
+            continue
+        eventos.append({
+            "codigo": codigo,
+            "descricao": str(e.get("@desc") or "").strip(),
+            "pais": achado.group(1) if achado else None,
+            "data": _texto(e.get("ops:L007EP")),
+            "texto": pre,
+        })
+
+    por_pais: dict = {}
+    for ev in eventos:
+        if not ev["pais"]:
+            continue
+        p = por_pais.setdefault(ev["pais"], {"caducou": False, "taxa_paga": False,
+                                             "atos": 0, "ultimo_evento": None})
+        if ev["codigo"] == CADUCOU:
+            p["caducou"] = True
+        elif ev["codigo"] == TAXA_PAGA:
+            p["taxa_paga"] = True
+        elif ev["codigo"] == ATO_NACIONAL:
+            p["atos"] += 1
+        if ev["data"] and (not p["ultimo_evento"] or ev["data"] > p["ultimo_evento"]):
+            p["ultimo_evento"] = ev["data"]
+
+    return {
+        "referencia": referencia,
+        "encontrado": True,
+        "total_eventos": len(eventos),
+        "paises_com_evento_nacional": sorted(por_pais),
+        "caducado_em": sorted(p for p, v in por_pais.items() if v["caducou"]),
+        "taxa_nacional_paga_em": sorted(p for p, v in por_pais.items() if v["taxa_paga"]),
+        "por_pais": dict(sorted(por_pais.items())),
+        "eventos": eventos,
+        "aviso": (
+            "Registro do PASSADO, nunca calendario. O INPADOC nao publica vencimento "
+            "futuro. Ausencia de evento num pais nao prova ausencia de direito: pode "
+            "ser so atraso do escritorio nacional em reportar ao EPO. E 'ato_nacional' "
+            "(REG) NAO significa 'esta viva' -- o codigo nacional pode ser de extincao."
+        ),
+    }
+
+
+TETO_SEMANAL_BYTES = 4 * 1024**3  # free tier do EPO: 4 GB por semana
+
+
+@mcp.tool()
+def epo_quota(dias: int = 7) -> dict:
+    """Quanto da cota do EPO ja foi gasto na janela. O teto e 4 GB por semana.
+
+    USE QUANDO: for expandir familia de carteira grande, ou antes de uma varredura.
+
+    POR QUE EXISTE: a API do EPO NAO expoe contador de consumo. Sem esta leitura, o
+    teto so aparece quando ja foi estourado -- e a partir dai toda busca falha, o que
+    num dia de prazo e o pior momento possivel. Cada chamada bem-sucedida grava os
+    bytes em inpi/data/epo_quota.log; aqui so somamos.
+
+    LIMITE: contamos os bytes da RESPOSTA. O EPO contabiliza do lado dele e pode
+    divergir. Trate como ordem de grandeza, nao como extrato.
+    """
+    if not QUOTA_LOG.exists():
+        return {"erro": True, "mensagem": f"Sem log de cota em {QUOTA_LOG}."}
+
+    corte = datetime.now(timezone.utc).timestamp() - dias * 86400
+    total, chamadas, por_op, ilegiveis = 0, 0, {}, 0
+    for linha in QUOTA_LOG.read_text(encoding="utf-8").splitlines():
+        partes = linha.split("\t")
+        if len(partes) != 3:
+            ilegiveis += 1
+            continue
+        ts, op, tam = partes
+        try:
+            # duas escritas convivem no mesmo arquivo: epo_mcp grava ISO 8601 e
+            # familia_epo grava epoch. Ler so uma delas subestimaria o consumo.
+            quando = (datetime.fromisoformat(ts).timestamp() if "-" in ts
+                      else float(ts))
+            n = int(tam)
+        except ValueError:
+            ilegiveis += 1
+            continue
+        if quando < corte:
+            continue
+        total += n
+        chamadas += 1
+        base = op.split(":")[0]
+        por_op[base] = por_op.get(base, 0) + n
+
+    pct = total / TETO_SEMANAL_BYTES
+    return {
+        "janela_dias": dias,
+        "chamadas": chamadas,
+        "bytes": total,
+        "mb": round(total / 1024**2, 2),
+        "teto_semanal_gb": 4,
+        "percentual_do_teto": round(pct * 100, 4),
+        "bytes_por_operacao": dict(sorted(por_op.items(), key=lambda x: -x[1])),
+        "linhas_ilegiveis": ilegiveis,
+        "alerta": (
+            "ACIMA DE 80% DA COTA SEMANAL. Pare de expandir familia e reduza a faixa "
+            "das buscas -- estourar o teto derruba TODA consulta ao EPO ate a virada "
+            "da semana." if pct > 0.8 else ""
+        ),
     }
 
 

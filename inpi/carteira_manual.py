@@ -1,10 +1,20 @@
 """Quadro de anuidades a partir da lista de docketing do cliente, nao da familia INPADOC.
 
-Existe porque a descoberta por familia tem um teto que nenhum ajuste remove: uma
+Existe porque a descoberta por FAMILIA tem um teto que nenhum ajuste remove: uma
 validacao de patente europeia em BE, FR, GB, GR, IE, IT, LU, NL ou SE nao gera
 publicacao nacional (Acordo de Londres), logo nao existe membro INPADOC. Dos 59 casos
-reais da Tecnored, 46 sao invisiveis a qualquer busca de familia. A lista do escritorio
-e a unica fonte completa; o EPO entra so para datar cada familia.
+reais da Tecnored, 46 sao invisiveis a qualquer busca de familia.
+
+⚠️ CORRECAO (2026-07-27): "invisivel a busca de familia" nao e "invisivel a qualquer
+busca". O STATUS LEGAL INPADOC -- outro servico do EPO, que este projeto nao usava --
+traz o evento PGFP, em que o proprio escritorio nacional comunica ao EPO que a
+anuidade foi paga. Medido na familia EP14874476: dos 15 estados europeus desta lista,
+o status legal achou os 15, os 9 de Londres inclusive, e achou PT, que a lista NAO
+tem. Ver carteira.descobrir_validacoes.
+
+A lista do escritorio deixou de ser a unica fonte da validacao europeia, mas continua
+sendo a unica que conhece a carteira inteira de uma vez -- e a unica que tem o numero
+com que cada associado trabalha.
 """
 
 from __future__ import annotations
@@ -62,13 +72,20 @@ def proxima(caso: dict, hoje: date) -> dict:
     r = _regra(caso)
     base_txt = caso["data_base"]
     saida = {**caso, "anuidade": None, "vencimento": None, "limite_com_sobretaxa": None,
-             "situacao": "", "regra": ""}
+             "situacao": "", "regra": "", "confianca": "indisponivel", "aviso_da_regra": ""}
     if not base_txt:
         saida["situacao"] = "data-base desconhecida — confirmar com o associado"
         return saida
     if not r:
         saida["situacao"] = f"jurisdicao {caso['pais']} fora da tabela de regras"
+        saida["confianca"] = "sem_regra"
         return saida
+
+    # Este caminho emitia data sem dizer de que confianca ela era -- as outras duas
+    # rotas ja rotulavam. Rotulo unico, vindo da propria regra: assinar a jurisdicao
+    # no CSV vira 'calculado' aqui sem tocar em codigo.
+    saida["confianca"] = jur.rotulo(r)
+    saida["aviso_da_regra"] = "" if r.projeta else jur.AVISO_NAO_REVISADO
 
     base = date.fromisoformat(base_txt)
     conc = date.fromisoformat(caso["concessao"]) if caso.get("concessao") else None

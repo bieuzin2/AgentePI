@@ -175,9 +175,39 @@ Chave gratuita em `account.uspto.gov/api-manager`, exige verificação por ID.me
 | :--- | :--- |
 | Quanto custa a anuidade em cada país? | ❌ tabela de taxas, fonte separada |
 | Quando vence a anuidade EP/US/CN? | ❌ nenhuma fonte publica vencimento futuro |
+| Esse EP foi validado em quais países? | ✅ status legal INPADOC, evento `PGFP` — ver abaixo |
+| Em quais países ele já caducou? | ✅ evento `PG25` |
+| Qual o prazo para validar o EP recém-concedido? | ✅ art. 65 EPC, da menção de concessão (Register) |
 | Prazo de entrada em fase nacional (30/31 meses) do meu PCT | 🔧 cálculo a partir da prioridade |
 | Andamento no CNIPA além do que o INPADOC espelha | ❌ exigiria fonte chinesa direta |
 | Literatura não-patentária | ⚠️ Lens, mas o trial só liberou a Patent API |
+
+---
+
+### O Acordo de Londres, revisto
+
+Este documento e o `carteira_manual.py` afirmavam que a validação europeia em BE, FR, GB,
+GR, IE, IT, LU, NL e SE era invisível a qualquer busca. **A afirmação estava certa sobre a
+busca de família e errada como afirmação geral.**
+
+Lá a validação não gera publicação nacional, então de fato não existe membro INPADOC. Mas
+o escritório nacional **reporta ao EPO** o pagamento da anuidade, e o evento aparece no
+serviço de **status legal** — outro endpoint do OPS, que o projeto não usava.
+
+Medido na família `EP14874476`, contra o docketing real:
+
+| | |
+| :--- | :--- |
+| estados europeus na lista do escritório | 15 |
+| encontrados pelo status legal (`PGFP`) | **15**, os 9 de Londres inclusive |
+| encontrados que a lista **não** tinha | 1 — PT, com anuidade paga |
+| marcados como caducados (`PG25`) | CH e LT |
+| na lista e não encontrados | AU, CA, CN, IN, UA, ZA — não são EP; vêm pela família |
+
+Duas ressalvas que continuam valendo. `PGFP` é afirmação do escritório nacional; `REG`
+sozinho só diz que houve ato no país, e o código nacional pode ser até de extinção (em CH,
+`PL` é lapso). E ausência de evento **não** prova ausência de validação — pode ser só
+atraso do escritório em reportar.
 
 ---
 
