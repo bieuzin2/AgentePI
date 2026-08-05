@@ -9,13 +9,12 @@ vencimento futuro; pagamento em dia nao gera despacho. Quem recebe a planilha
 precisa ver isso antes de agir.
 
 Uso:
-    from relatorios import gerar_prazos
+    from inpi.relatorios import gerar_prazos
     gerar_prazos(escritorio="Clarke Modet", de="2026-08-01", ate="2026-10-31")
 """
 
 from __future__ import annotations
 
-import sys
 from datetime import date
 from pathlib import Path
 
@@ -35,7 +34,6 @@ from reportlab.platypus import (
 )
 
 RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
 
 AVISO = (
     "PROJEÇÃO CALCULADA, NÃO CONSULTADA. O INPI publica consequência, não vencimento "
@@ -177,7 +175,7 @@ def gerar_prazos_pdf(
     saida: str | None = None,
 ) -> dict:
     """Gera PDF com resumo executivo e tabela de prazos."""
-    import inpi_mcp as mcp_mod
+    from inpi import inpi_mcp as mcp_mod
 
     d_ini = date.fromisoformat(de) if de else date.today()
     d_fim = date.fromisoformat(ate) if ate else mcp_mod.anu._mais_meses(d_ini, 3)
@@ -388,7 +386,7 @@ def gerar_prazos(
     saida: str | None = None,
 ) -> dict:
     """Gera o XLSX de prazos. Devolve o caminho e as contagens."""
-    import inpi_mcp as mcp_mod
+    from inpi import inpi_mcp as mcp_mod
 
     d_ini = date.fromisoformat(de) if de else date.today()
     d_fim = date.fromisoformat(ate) if ate else mcp_mod.anu._mais_meses(d_ini, 3)

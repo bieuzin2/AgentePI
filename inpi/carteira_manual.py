@@ -20,15 +20,13 @@ com que cada associado trabalha.
 from __future__ import annotations
 
 import csv
-import sys
 from datetime import date
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
+from inpi import anuidades as anu
+from inpi import jurisdicoes as jur
 
-import anuidades as anu
-import jurisdicoes as jur
+RAIZ = Path(__file__).resolve().parent
 
 CARTEIRA = RAIZ / "referencias" / "carteira-tecnored.csv"
 TAXAS = RAIZ / "referencias" / "taxas-anuidade.csv"

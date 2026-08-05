@@ -6,13 +6,10 @@ tem que aparecer em vez de ser sobrescrita pela ultima carga.
 """
 
 import csv
-import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import carteira as ct
+from inpi import carteira as ct
 
 CSV_REAL = ct.RAIZ / "referencias" / "carteira-tecnored.csv"
 
@@ -142,8 +139,7 @@ def test_listar_denuncia_caso_sem_data_base(banco):
 
 
 def _register_falso(monkeypatch, designados, mencao="20181128"):
-    sys.path.insert(0, str(ct.RAIZ.parent / "epo"))
-    import epo_mcp
+    from epo import epo_mcp
 
     monkeypatch.setattr(epo_mcp, "epo_register", lambda ref: {
         "encontrado": True, "estados_designados": designados,
@@ -263,8 +259,7 @@ def test_fila_de_revisao_prioriza_pelo_peso_na_carteira(banco):
 
 
 def _legal_falso(monkeypatch, pagos, caducados=(), atos=()):
-    sys.path.insert(0, str(ct.RAIZ.parent / "epo"))
-    import epo_mcp
+    from epo import epo_mcp
 
     por_pais = {p: {"caducou": False, "taxa_paga": True, "atos": 1,
                     "ultimo_evento": "2026-01-01"} for p in pagos}

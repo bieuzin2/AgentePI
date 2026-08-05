@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from anuidades import _mais_meses
+from inpi.anuidades import _mais_meses
 
 TABELA = Path(__file__).resolve().parent / "referencias" / "anuidades-por-jurisdicao.csv"
 

@@ -5,13 +5,9 @@ em {'$': ...} e alterna dict/lista para o mesmo campo) e as guardas de faixa.
 O aceite contra a API ao vivo e outra coisa -- ver docs/aceite/A2.md.
 """
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import epo_mcp as m
+from epo import epo_mcp as m
 
 
 # Formato real do EPO OPS: '$' para texto, '@' para atributo, campo repetido

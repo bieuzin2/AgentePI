@@ -250,9 +250,7 @@ def _materializa_nomes(con) -> None:
     consulta escritorios-apelidos.csv, que mapeia erro de digitacao a mao. Sao poucos
     nomes distintos, entao o custo e aceitavel.
     """
-    import sys
-    sys.path.insert(0, str(RAIZ))
-    from escritorios import normalizar
+    from inpi.escritorios import normalizar
 
     for tabela, coluna, nova in (
         ("procuradores", "procurador", "escritorios"),

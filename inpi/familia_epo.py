@@ -18,14 +18,12 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
 load_dotenv(RAIZ.parent / ".env")
 
 CACHE = RAIZ / "data" / "cache_familia"

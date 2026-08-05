@@ -20,15 +20,12 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 from datetime import date
 from pathlib import Path
 
+from inpi import panorama_carteira as pc
+
 RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
-
-import panorama_carteira as pc  # noqa: E402
-
 VENDOR_CHART = RAIZ / "referencias" / "chart.umd.min.js"
 LOGO_OFICIAL = RAIZ / "referencias" / "marca-clarkemodet" / "logo-clarkemodet-blue.svg"
 FONTS_DIR = RAIZ / "referencias" / "fonts"

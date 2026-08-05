@@ -4,14 +4,11 @@ Os de normalizacao e de prazo rodam sem banco. Os de consulta so rodam se o
 DuckDB local existir (pulam sozinhos em maquina que ainda nao ingeriu).
 """
 
-import os
-import sys
 from datetime import date
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import inpi_mcp as m
+from inpi import inpi_mcp as m
 
 precisa_banco = pytest.mark.skipif(
     not m.BANCO.exists(), reason="banco ausente; rode python inpi/ingest.py"
@@ -149,7 +146,7 @@ def test_cobertura_declara_a_data_de_corte():
 
 # --- C1: regressoes da auditoria --------------------------------------------
 
-import anuidades as anu  # noqa: E402
+from inpi import anuidades as anu
 
 
 @pytest.mark.parametrize(
@@ -289,7 +286,7 @@ def test_novidades_recusa_data_em_formato_errado():
 
 # --- C4/C5: cobertura e exterior -------------------------------------------
 
-import jurisdicoes as jur  # noqa: E402
+from inpi import jurisdicoes as jur
 
 
 def test_so_o_brasil_projeta_datas():
@@ -336,7 +333,7 @@ def test_cobertura_alerta_quando_a_base_envelhece():
 
 # --- C3: carteira, mercado e prospeccao ------------------------------------
 
-import escritorios as esc  # noqa: E402
+from inpi import escritorios as esc
 
 
 @pytest.mark.parametrize(
@@ -495,7 +492,7 @@ def test_relatorio_xlsx_bate_com_a_tool_que_o_alimenta(tmp_path):
     """O total do arquivo tem que ser o mesmo da tool. Divergencia aqui significa
     que a serializacao perdeu linha no caminho."""
     import openpyxl
-    from relatorios import gerar_prazos
+    from inpi.relatorios import gerar_prazos
 
     destino = tmp_path / "p.xlsx"
     r = gerar_prazos(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
@@ -516,7 +513,7 @@ def test_relatorio_carrega_o_aviso_em_toda_aba(tmp_path):
     """O aviso nao e formalidade: quem recebe a planilha precisa ver que e projecao
     antes de agir."""
     import openpyxl
-    from relatorios import AVISO, gerar_prazos
+    from inpi.relatorios import AVISO, gerar_prazos
 
     destino = tmp_path / "p.xlsx"
     gerar_prazos(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
@@ -532,7 +529,7 @@ def test_relatorio_carrega_o_aviso_em_toda_aba(tmp_path):
 
 @precisa_banco
 def test_relatorio_pdf_gera_arquivo_com_marca(tmp_path):
-    from relatorios import gerar_prazos_pdf
+    from inpi.relatorios import gerar_prazos_pdf
 
     destino = tmp_path / "p.pdf"
     r = gerar_prazos_pdf(escritorio="Clarke Modet", de="2026-08-01", ate="2026-08-31",
@@ -549,7 +546,7 @@ def test_relatorio_pdf_gera_arquivo_com_marca(tmp_path):
 def test_urgencia_e_mais_conservadora_para_prazo_fatal():
     """Art. 33 e recurso nao tem prazo complementar: perdeu, perdeu. Por isso 90
     dias ja e vermelho, enquanto para anuidade 90 dias ainda e verde."""
-    from relatorios import _urgencia
+    from inpi.relatorios import _urgencia
     assert _urgencia(90, "exame") == "VERMELHO"
     assert _urgencia(90, "recurso") == "VERMELHO"
     assert _urgencia(90, "anuidade") == "verde"
@@ -579,7 +576,7 @@ def test_periodicidade_marcos_us():
     periodicidade 'marcos' nao era suportada e o return de erro disparava antes
     de olhar a data-base -- 14 linhas saiam como 'indisponivel' com a mensagem
     errada 'regra conta da concessao'."""
-    from quadro_global import _anuidades_estrangeiras
+    from inpi.quadro_global import _anuidades_estrangeiras
     r = _anuidades_estrangeiras("US", None, date(2021, 1, 1), date(2022, 12, 31),
                                 data_concessao=date(2018, 4, 24))
     venc = {x["vencimento"] for x in r if x.get("vencimento")}
@@ -589,7 +586,7 @@ def test_periodicidade_marcos_us():
 def test_pedido_nao_concedido_nao_e_lacuna():
     """Em jurisdicao que conta da concessao, pedido em exame NAO TEM anuidade
     devida. Antes saia 'indisponivel', que diz 'nao sei' sobre algo que se sabe."""
-    from quadro_global import _anuidades_estrangeiras
+    from inpi.quadro_global import _anuidades_estrangeiras
     r = _anuidades_estrangeiras("KR", date(2020, 1, 1), date(2026, 7, 26),
                                 date(2026, 12, 31), data_concessao=None)
     assert r[0]["confianca"] == "sem_anuidade_nesta_fase"
@@ -600,7 +597,7 @@ def test_validacao_de_ep_usa_regra_ep_nac():
     """Kind T* e traducao de patente europeia validada. A regra e a de EP-nac
     (3o ano em diante, da data de deposito do EP), nao a nacional generica --
     e a linha EP-nac ja existia no CSV, so nunca era consultada."""
-    from quadro_global import _anuidades_estrangeiras, _regra_de
+    from inpi.quadro_global import _anuidades_estrangeiras, _regra_de
     r, via_ep = _regra_de("DK", "T3")
     assert via_ep and r.jurisdicao == "EP-NAC"
     # EP-3235912, deposito 2015-11-09: a 12a vence em 09/11/2026
@@ -613,7 +610,7 @@ def test_vencimento_e_a_data_ordinaria_nao_o_fim_da_graca():
     """Regressao: filtrar pelo fim da graca jogava fora anuidade que vence dentro
     do periodo. A 12a do EP validado vence 09/11/2026, mas com 6 meses de graca o
     fim caia em 2027 e a linha sumia."""
-    from quadro_global import _anuidades_estrangeiras
+    from inpi.quadro_global import _anuidades_estrangeiras
     r = _anuidades_estrangeiras("DK", date(2015, 11, 9), date(2026, 7, 26),
                                 date(2026, 12, 31), kind="T3")
     x = next(v for v in r if v.get("vencimento") == "2026-11-09")
@@ -621,7 +618,7 @@ def test_vencimento_e_a_data_ordinaria_nao_o_fim_da_graca():
 
 
 def test_jurisdicoes_novas_na_tabela():
-    import jurisdicoes as jur
+    from inpi import jurisdicoes as jur
     regras = jur.carregar()
     for j in ("UA", "PY", "UY", "EP-NAC"):
         assert j in regras, f"{j} fora da tabela"

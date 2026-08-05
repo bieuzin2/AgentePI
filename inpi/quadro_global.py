@@ -13,15 +13,13 @@ Por isso cada linha carrega a coluna 'confianca':
 
 from __future__ import annotations
 
-import sys
 from datetime import date
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
+from inpi import anuidades as anu
+from inpi import jurisdicoes as jur
 
-import anuidades as anu  # noqa: E402
-import jurisdicoes as jur  # noqa: E402
+RAIZ = Path(__file__).resolve().parent
 
 
 def _regra_de(pais: str, kind: str | None):
@@ -166,7 +164,7 @@ def _concessao_por_pedido(membros: list[dict]) -> dict:
 def montar(titular: str, ate: str, hoje: str | None = None,
            criterio: str = "vencimento") -> dict:
     """Quadro Brasil + exterior de um cliente."""
-    import inpi_mcp as m
+    from inpi import inpi_mcp as m
     from familia_epo import familia
 
     d_hoje = date.fromisoformat(hoje) if hoje else date.today()

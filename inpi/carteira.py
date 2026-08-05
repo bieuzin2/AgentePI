@@ -22,7 +22,6 @@ from __future__ import annotations
 import csv
 import io
 import re
-import sys
 import unicodedata
 from datetime import date, datetime
 from pathlib import Path
@@ -30,7 +29,6 @@ from pathlib import Path
 import duckdb
 
 RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
 
 BANCO = RAIZ / "data" / "carteira.duckdb"
 
@@ -101,7 +99,7 @@ def normalizar_numero(jurisdicao: str, bruto: str) -> str:
     j = (jurisdicao or "").strip().upper()
     s = re.sub(r"[\s.\-/,]", "", (bruto or "").upper())
     if j == "BR":
-        import inpi_mcp
+        from inpi import inpi_mcp
         return inpi_mcp.normaliza_numero(bruto)
     if j and s.startswith(j):
         s = s[len(j):]
@@ -309,7 +307,7 @@ def ingerir(origem: str, cliente: str, mapa: dict | None = None,
 def descobrir_inpi(cliente: str, titular: str | None = None,
                    hoje: date | None = None) -> dict:
     """Casos BR que a base do INPI conhece para este titular."""
-    import inpi_mcp as m
+    from inpi import inpi_mcp as m
 
     estados, total = m._carregar_lote(titular=titular or cliente)
     casos = [
@@ -438,8 +436,7 @@ def descobrir_validacoes(cliente: str, teto: int = 20,
     O que continua invisivel por aqui e o que nao e europeu (AU, CA, CN, IN, UA, ZA);
     esses vem pela familia INPADOC, em expandir_familia.
     """
-    sys.path.insert(0, str(RAIZ.parent / "epo"))
-    import epo_mcp
+    from epo import epo_mcp
 
     pubs, _ = _publicacoes_ep(cliente)
     alvo = sorted(pubs.items())[:teto]
@@ -498,9 +495,8 @@ def validacoes_ep(cliente: str, teto: int = 20) -> dict:
     dos estados de Londres que foram designados, em quais a carteira NAO tem
     registro? Se houve validacao la, nenhuma fonte publica mostra.
     """
-    sys.path.insert(0, str(RAIZ.parent / "epo"))
-    import epo_mcp
-    from anuidades import _mais_meses
+    from epo import epo_mcp
+    from inpi.anuidades import _mais_meses
 
     pubs, jurs = _publicacoes_ep(cliente)
     familias = sorted(set(pubs) | set(jurs))
@@ -644,7 +640,7 @@ def panorama(cliente: str, de: str | None = None, ate: str | None = None,
     A secao 'lacunas' e obrigatoria e nunca vem vazia por conveniencia: e ela que
     impede a leitura de que o quadro esta completo quando nao esta.
     """
-    import quadro_global as qg
+    from inpi import quadro_global as qg
 
     d_hoje = date.fromisoformat(de) if de else date.today()
     d_ate = date.fromisoformat(ate) if ate else _mais_um_ano(d_hoje)
@@ -661,7 +657,7 @@ def panorama(cliente: str, de: str | None = None, ate: str | None = None,
     brs = [c["numero_norm"] for c in cart["casos"] if c["jurisdicao"] == "BR"]
     if brs:
         try:
-            import inpi_mcp as m
+            from inpi import inpi_mcp as m
             br = m.inpi_prazos_carteira(numeros=brs, de=d_hoje.isoformat(),
                                         ate=d_ate.isoformat(), limite_resultados=5000)
             for p in br["prazos"]:
@@ -791,7 +787,7 @@ def a_revisar(cliente: str | None = None) -> dict:
     uma jurisdicao (revisado_por + revisado_em no CSV) converte as linhas dela de
     'estimado' para 'calculado' sem tocar em codigo.
     """
-    import jurisdicoes as jur
+    from inpi import jurisdicoes as jur
 
     regras = jur.carregar()
     contagem: dict = {}
