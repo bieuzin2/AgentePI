@@ -61,18 +61,20 @@
 3. `feat(dashboard): conecta secao de graficos landscape com fallback gracioso`
 4. `docs: evidencia de aceite Fase 5` (este arquivo)
 
-## Pendente — responsabilidade do Gabriel
+## Validação ponta a ponta (pós-sessão inicial)
 
-A integração real com o BigQuery **não foi testada ponta a ponta nesta
-sessão**. Falta:
+`gcloud` CLI instalado via winget, `gcloud auth application-default login`
+rodado contra o projeto GCP `patentes-landscape`. Consulta real executada:
 
-1. Instalar o `gcloud` CLI.
-2. Rodar `gcloud auth application-default login` (ADC) apontando para o
-   projeto GCP `patentes-landscape` já criado (BigQuery API já ativada).
-3. Só depois disso as 4 tools MCP (`landscape_evolucao_temporal`,
-   `landscape_top_titulares`, `landscape_co_classificacao`,
-   `landscape_perfil_titular`) conseguem executar consulta de verdade —
-   antes disso, `landscape/bigquery_client.cliente()` levanta `RuntimeError`
-   com a instrução acima, de propósito (nunca falha em silêncio).
-4. Depois de validado, atualizar `docs/capacidades.md` (🔧 → ✅ na linha de
-   landscape) — não feito aqui porque a fonte real ainda não foi consultada.
+```
+consultas.evolucao_temporal(cliente(), cpc_prefix='A61K', pais='BR',
+                             desde='2018-01-01', ate='2022-12-31',
+                             confirmar_acima_10gb=True)
+```
+
+Dry-run funcionou como projetado: estimou 16.48 GB, acima do teto de 10 GB,
+recusou sem `confirmar_acima_10gb=True` (`ConsultaMuitoGrandeError`), e
+executou de verdade com a flag. Retornou depósitos reais de A61K no Brasil
+por ano (2018–2022), com `fonte` e parâmetros no payload — âncora tripla
+confirmada. `docs/capacidades.md` deve ser atualizado (🔧 → ✅ na linha de
+landscape) na próxima passada de documentação.
