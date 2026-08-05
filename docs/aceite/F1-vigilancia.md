@@ -102,8 +102,4 @@ Sem regressão nos 129 testes de `epo`/`inpi`; 12 testes novos em `vigilancia/`.
 
 ## Pendente para a Fase 2 (dashboard, plano §4.3 — fora de escopo desta fase)
 
-- Extrair `inpi/painel_dados.py` como camada de dados única.
-- Quebrar `relatorio_html.py::gerar()` em template + seções, com "alertas da semana",
-  "anuidades 90 dias" e "tarefas abertas".
-- Ligar `vigilancia/executar.py` à regeneração automática do dashboard (o TODO deixado
-  neste código).
+Concluído na Fase 2 — ver `docs/aceite/F2-dashboard.md`.
