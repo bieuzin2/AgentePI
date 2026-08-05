@@ -13,6 +13,7 @@ import duckdb
 import pytest
 
 from inpi import painel_dados as pd
+from inpi import tarefas as tf
 
 
 def test_alertas_semana_sem_banco_retorna_lista_vazia(tmp_path):
@@ -53,7 +54,7 @@ def test_anuidades_90d_filtra_tipo_e_janela():
     assert [p["numero_inpi"] for p in r] == ["D", "A"]  # ordenado por prazo
 
 
-def test_montar_inclui_placeholders_de_tarefas_e_landscape(tmp_path, monkeypatch):
+def test_montar_inclui_placeholder_de_landscape(tmp_path, monkeypatch):
     def _panorama_stub(procurador, hoje=None):
         return {
             "cobertura": {}, "total_casos": 0, "situacao": {},
@@ -61,10 +62,30 @@ def test_montar_inclui_placeholders_de_tarefas_e_landscape(tmp_path, monkeypatch
         }
 
     monkeypatch.setattr(pd.pc, "panorama", _panorama_stub)
+    monkeypatch.setattr(tf, "BANCO", tmp_path / "sem_banco.duckdb")
     d = pd.montar("Clarke Modet", hoje="2026-08-05",
-                   banco_alertas=tmp_path / "sem_banco.duckdb")
+                   banco_alertas=tmp_path / "sem_banco_alertas.duckdb")
     assert d["alertas_semana"] == []
     assert d["anuidades_90d"] == []
     assert d["tarefas"]["lista"] == []
-    assert "Fase 6" in d["tarefas"]["nota"]
+    assert d["tarefas"]["vencendo_7d"] == []
     assert "Fase 5" in d["landscape"]["nota"]
+
+
+def test_montar_conecta_tarefas_abertas_e_alerta_de_vencimento(tmp_path, monkeypatch):
+    """Dados sinteticos: uma tarefa vencendo em 7 dias, outra fora da janela."""
+    def _panorama_stub(procurador, hoje=None):
+        return {
+            "cobertura": {}, "total_casos": 0, "situacao": {},
+            "prazos_12m": {"lista": []},
+        }
+
+    monkeypatch.setattr(pd.pc, "panorama", _panorama_stub)
+    monkeypatch.setattr(tf, "BANCO", tmp_path / "carteira.duckdb")
+    tf.tarefa_criar("responder oficio", processo="BR1", prazo_interno="2026-08-10")
+    tf.tarefa_criar("revisar contrato", processo="BR2", prazo_interno="2027-01-01")
+
+    d = pd.montar("Clarke Modet", hoje="2026-08-05",
+                   banco_alertas=tmp_path / "sem_banco_alertas.duckdb")
+    assert len(d["tarefas"]["lista"]) == 2
+    assert [t["processo"] for t in d["tarefas"]["vencendo_7d"]] == ["BR1"]

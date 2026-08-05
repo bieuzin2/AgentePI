@@ -114,6 +114,7 @@ com a ressalva de que é projeção, não a conta do INPI.
 | Quais casos meus têm prazo vencendo em 30 dias? | ❌ é docketing, não pesquisa |
 | Tem alerta pendente na minha carteira vigiada (despacho novo, anulação, anuidade entrando na janela de 90 dias)? | ✅ `inpi_alertas` — vigilância autônoma semanal, ver Fase 1 do `plano-v2.md` |
 | Quero um dashboard visual da carteira, com alertas da semana e anuidades 90d juntos | ✅ `inpi/relatorio_html.py::gerar()` — HTML autocontido, sem servidor, regenerado a cada execução de `vigilancia/executar.py`; ver Fase 2 do `plano-v2.md` |
+| Quero anotar um lembrete interno num caso (não é prazo legal) | ✅ `tarefa_criar`/`tarefa_listar`/`tarefa_concluir` — tabela `tarefas` em `carteira.duckdb`, aparece no dashboard e destaca as que vencem em 7 dias; **não é docketing**, ver Fase 6 do `plano-v2.md` |
 
 ### Vigilância e inteligência
 

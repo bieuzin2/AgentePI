@@ -5,7 +5,7 @@ Consome inpi.painel_dados.montar() (camada de dados unica, Fase 2 -- plano
   - Chart.js vendorizado inline (offline, sem CDN)
   - dados embutidos como JSON
   - segmentacao global (refiltra o relatorio inteiro) + AutoFilter estilo Excel
-  - secoes novas: alertas da semana, anuidades 90 dias, tarefas (placeholder),
+  - secoes novas: alertas da semana, anuidades 90 dias, tarefas abertas,
     landscape (placeholder) -- renderizadas em Python, estaticas (nao entram
     na segmentacao client-side: sao snapshot do dia, nao dimensao do caso)
   - @media print A4, tema claro forcado
@@ -113,6 +113,28 @@ def _secao_anuidades_90d(anuidades: list[dict]) -> str:
     <th>Descrição</th><th>Prazo</th></tr></thead><tbody>{corpo}</tbody></table></div></section>"""
 
 
+def _secao_tarefas(tarefas: dict) -> str:
+    """Tarefas abertas -- lembretes internos (plano 4.7), nao docketing."""
+    lista = tarefas["lista"]
+    vencendo = {t["id"] for t in tarefas["vencendo_7d"]}
+    if not lista:
+        corpo = '<tr><td colspan="4">Nenhuma tarefa aberta.</td></tr>'
+    else:
+        linhas = []
+        for t in lista:
+            alerta = ' <span class="tag alta">Vence em 7 dias</span>' if t["id"] in vencendo else ""
+            linhas.append(
+                f"<tr><td>{_esc(t.get('processo') or '-')}</td><td>{_esc(t['descricao'])}</td>"
+                f"<td>{_esc(t.get('prazo_interno') or '-')}{alerta}</td></tr>"
+            )
+        corpo = "".join(linhas)
+    return f"""<section><h2>Tarefas abertas</h2>
+  <p class="sub">{_esc(tarefas["nota"])}</p>
+  <div style="overflow-x:auto"><table><thead><tr><th>Processo</th>
+    <th>Descrição</th><th>Prazo interno</th></tr></thead>
+    <tbody>{corpo}</tbody></table></div></section>"""
+
+
 def _secao_placeholder(titulo: str, nota: str) -> str:
     """Secao de feature ainda nao implementada (Fases 5/6). Le como 'em construcao'."""
     return f"""<section><h2>{_esc(titulo)}</h2>
@@ -139,7 +161,7 @@ def gerar(procurador: str = "Clarke Modet", hoje: str | None = None,
     secoes_novas = (
         _secao_alertas(d["alertas_semana"])
         + _secao_anuidades_90d(d["anuidades_90d"])
-        + _secao_placeholder("Tarefas abertas", d["tarefas"]["nota"])
+        + _secao_tarefas(d["tarefas"])
         + _secao_placeholder("Landscape (panorama de mercado)", d["landscape"]["nota"])
     )
 
