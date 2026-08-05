@@ -19,6 +19,12 @@
       "command": ".venv\\Scripts\\python.exe",
       "args": ["inpi\\inpi_mcp.py"],
       "env": {}
+    },
+    "busca": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["busca\\busca_mcp.py"],
+      "env": {}
     }
   }
 }
