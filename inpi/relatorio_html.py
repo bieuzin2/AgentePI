@@ -136,9 +136,21 @@ def _secao_tarefas(tarefas: dict) -> str:
 
 
 def _secao_placeholder(titulo: str, nota: str) -> str:
-    """Secao de feature ainda nao implementada (Fases 5/6). Le como 'em construcao'."""
+    """Secao de feature ainda nao implementada (Fase 6). Le como 'em construcao'."""
     return f"""<section><h2>{_esc(titulo)}</h2>
   <div class="placeholder"><b>Ainda não implementado</b>{_esc(nota)}</div></section>"""
+
+
+def _secao_landscape(landscape: dict) -> str:
+    """Landscape (BigQuery, Fase 5): placeholder se o cache ainda estiver vazio
+    (sem ADC configurado ou nenhuma consulta rodada); resumo textual se houver
+    algo em cache. Grafico Chart.js completo fica para quando houver dado real
+    -- sem forcar acoplamento com uma consulta que ninguem rodou ainda."""
+    if "nota" in landscape:
+        return _secao_placeholder("Landscape (panorama de mercado)", landscape["nota"])
+    return f"""<section><h2>Landscape (panorama de mercado)</h2>
+  <p class="sub">Fonte: {_esc(landscape["fonte"])} · consultas em cache: """ \
+        f"""{landscape["consultas_cacheadas"]} · geradas em {_esc(landscape["gerado_em"])}</p></section>"""
 
 
 def gerar(procurador: str = "Clarke Modet", hoje: str | None = None,
@@ -162,7 +174,7 @@ def gerar(procurador: str = "Clarke Modet", hoje: str | None = None,
         _secao_alertas(d["alertas_semana"])
         + _secao_anuidades_90d(d["anuidades_90d"])
         + _secao_tarefas(d["tarefas"])
-        + _secao_placeholder("Landscape (panorama de mercado)", d["landscape"]["nota"])
+        + _secao_landscape(d["landscape"])
     )
 
     html_out = _TEMPLATE.format(

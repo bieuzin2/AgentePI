@@ -77,11 +77,23 @@ def montar(procurador: str = "Clarke Modet", hoje: str | None = None,
         "vencendo_7d": tf.tarefas_vencendo(dias=7, hoje=ref.isoformat()),
         "nota": "Lembrete interno, não é prazo legal (não é docketing).",
     }
-    d["landscape"] = {
-        "nota": "Graficos de landscape ainda nao implementados (Fase 5, "
-                "plano 4.6 -- TODO).",
-    }
+    d["landscape"] = _landscape()
     return d
+
+
+def _landscape() -> dict:
+    """Resumo do cache de consultas landscape (BigQuery, plano 4.6), se houver.
+    Sem cache (ex.: usuario ainda nao configurou ADC/gcloud, ou nenhuma
+    consulta rodou), cai no placeholder -- o dashboard nunca quebra por isso."""
+    try:
+        from landscape.dashboard import resumo_para_dashboard
+        resumo = resumo_para_dashboard()
+    except Exception:
+        resumo = None
+    if resumo is None:
+        return {"nota": "Graficos de landscape ainda nao implementados (Fase 5, "
+                         "plano 4.6 -- TODO)."}
+    return resumo
 
 
 def demo() -> None:
