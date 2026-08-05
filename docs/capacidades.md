@@ -110,8 +110,9 @@ com a ressalva de que é projeção, não a conta do INPI.
 | Qual o teor e a data da exigência publicada? | ✅ código + RPI + texto literal |
 | Quantos dias o próprio despacho declarou? | ✅ quando declarou — cobre 0,83% |
 | Qual a data-limite para cumprir esta exigência? | ❌ **por decisão** — ver `prazos-observados.md` |
-| Quando vence a próxima anuidade? | 🔧 cálculo art. 84 (acima) |
+| Quando vence a próxima anuidade? | ✅ `inpi_anuidades` — cálculo art. 84, com data-base, regra aplicada e `16.1` como prova |
 | Quais casos meus têm prazo vencendo em 30 dias? | ❌ é docketing, não pesquisa |
+| Tem alerta pendente na minha carteira vigiada (despacho novo, anulação, anuidade entrando na janela de 90 dias)? | ✅ `inpi_alertas` — vigilância autônoma semanal, ver Fase 1 do `plano-v2.md` |
 
 ### Vigilância e inteligência
 
