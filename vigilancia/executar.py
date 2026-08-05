@@ -112,7 +112,8 @@ def gerar_markdown(alertas: list[dict], executado_em: str) -> Path:
 
 
 def executar(dry_run: bool = False, sem_reingestao: bool = False,
-             sem_email: bool = False, hoje: str | None = None) -> dict:
+             sem_email: bool = False, hoje: str | None = None,
+             destino_dashboard: str | None = None) -> dict:
     ref = date.fromisoformat(hoje) if hoje else date.today()
     cfg = carregar_config()
 
@@ -151,10 +152,12 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
     gravados = gravar_alertas(alertas)
     md = gerar_markdown(alertas, ref.isoformat())
 
-    # Dashboard (4.3, Fase 2): relatorio_html.gerar() so aceita 'procurador' e
-    # nao tem gancho para secao de alertas ainda -- integrar aqui seria
-    # inventar uma interface fragil. TODO(Fase 2): expor uma funcao que
-    # aceite os alertas e regenere o dashboard com a secao "alertas da semana".
+    # Dashboard (4.3, Fase 2): painel_dados.montar() le os alertas direto do
+    # BANCO (ja gravados acima), entao basta regerar o HTML -- sem precisar
+    # passar a lista de alertas por parametro.
+    from inpi.relatorio_html import gerar as gerar_dashboard
+    dashboard = gerar_dashboard(hoje=ref.isoformat(), banco_alertas=str(BANCO),
+                                 saida=destino_dashboard)
 
     resultado_email = (
         {"enviado": False, "mensagem": "sem_email=True"} if sem_email
@@ -169,6 +172,7 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
         "total_alertas": len(alertas),
         "gravados": gravados,
         "alertas_md": str(md),
+        "dashboard": dashboard,
         "vigia_exterior_rodou": primeira_terca_do_mes(ref),
         "email": resultado_email,
         "dry_run": dry_run,

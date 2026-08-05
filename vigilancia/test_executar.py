@@ -37,10 +37,14 @@ def test_executar_dry_run_nao_envia_email_e_gera_markdown(tmp_path, monkeypatch)
     monkeypatch.setattr(executar, "ESTADO_ANUIDADES", tmp_path / "estado_anu.json")
     monkeypatch.setattr(executar, "ESTADO_EXTERIOR", tmp_path / "estado_ext.json")
 
-    r = executar.executar(dry_run=True, sem_reingestao=True, hoje="2026-08-05")
+    dash_teste = tmp_path / "panorama.html"
+    r = executar.executar(dry_run=True, sem_reingestao=True, hoje="2026-08-05",
+                           destino_dashboard=str(dash_teste))
 
     assert not r.get("erro")
     assert md_teste.exists()
+    assert dash_teste.exists()
+    assert r["dashboard"]["arquivo"] == str(dash_teste)
     assert r["email"]["enviado"] is False
     assert r["email"].get("dry_run") is True
     assert log_teste.exists()
@@ -56,5 +60,6 @@ def test_executar_sem_email_pula_envio(tmp_path, monkeypatch):
     monkeypatch.setattr(executar, "ESTADO_ANUIDADES", tmp_path / "ea.json")
     monkeypatch.setattr(executar, "ESTADO_EXTERIOR", tmp_path / "ee.json")
 
-    r = executar.executar(sem_reingestao=True, sem_email=True, hoje="2026-08-05")
+    r = executar.executar(sem_reingestao=True, sem_email=True, hoje="2026-08-05",
+                           destino_dashboard=str(tmp_path / "panorama.html"))
     assert r["email"]["mensagem"] == "sem_email=True"
