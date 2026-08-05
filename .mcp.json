@@ -25,6 +25,12 @@
       "command": ".venv\\Scripts\\python.exe",
       "args": ["busca\\busca_mcp.py"],
       "env": {}
+    },
+    "landscape": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["landscape\\landscape_mcp.py"],
+      "env": {}
     }
   }
 }
