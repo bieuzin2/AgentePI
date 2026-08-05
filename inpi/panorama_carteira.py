@@ -25,16 +25,13 @@ VERACIDADE (nao negociavel):
 
 from __future__ import annotations
 
-import sys
 from datetime import date
-from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent
-sys.path.insert(0, str(RAIZ))
-
-import anuidades as anu  # noqa: E402
-import escritorios as esc  # noqa: E402
-import inpi_mcp as mcp  # noqa: E402
+from inpi import anuidades as anu
+from inpi import escritorios as esc
+from inpi.consulta import inpi_cobertura
+from inpi.db import con
+from inpi.prazos import _carregar_lote, _prazos_de
 
 # Situacao da carteira, derivada do estado ja computado por _estado_de. Buckets
 # mutuamente exclusivos, na ordem de precedencia. 9.1 = carta-patente (concedida).
@@ -60,7 +57,7 @@ def _classifica(est: dict) -> str:
 
 
 def _con():
-    return mcp.con()
+    return con()
 
 
 def _agg_por_ano_deposito(chave: str) -> list[dict]:
@@ -239,7 +236,7 @@ def panorama(procurador: str = "Clarke Modet", hoje: str | None = None) -> dict:
     ref = date.fromisoformat(hoje) if hoje else date.today()
     limite_12m = anu._mais_meses(ref, 12).isoformat()
 
-    estados, total = mcp._carregar_lote(procurador=procurador)  # 2 queries, testado
+    estados, total = _carregar_lote(procurador=procurador)  # 2 queries, testado
     dim = _dimensoes_lote(chave)  # secao IPC, pais, cliente por caso -- uma query
 
     clientes: list[str] = []
@@ -283,7 +280,7 @@ def panorama(procurador: str = "Clarke Modet", hoje: str | None = None) -> dict:
             sem_deposito += 1
             continue
         # Prazos 12m, enxutos para a tabela + com os indices de dimensao para refiltrar.
-        for p in mcp._prazos_de(est, ref, {"anuidade", "exame", "recurso", "vigencia"}):
+        for p in _prazos_de(est, ref, {"anuidade", "exame", "recurso", "vigencia"}):
             pz = p.get("prazo")
             if pz and ref.isoformat() <= pz <= limite_12m:
                 prazos.append({
@@ -307,7 +304,7 @@ def panorama(procurador: str = "Clarke Modet", hoje: str | None = None) -> dict:
         "escritorio": procurador,
         "chave": chave,
         "referencia": ref.isoformat(),
-        "cobertura": mcp.inpi_cobertura(),
+        "cobertura": inpi_cobertura(),
         "total_casos": total,
         "sem_data_deposito": sem_deposito,
         "situacao": situacao,
