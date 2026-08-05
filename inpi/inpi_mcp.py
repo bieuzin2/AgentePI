@@ -241,6 +241,42 @@ def carteira_jurisdicoes_a_revisar(cliente: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tarefas leves (lembretes internos -- plano 4.7. NAO e docketing, sem calculo
+# de prazo legal; ver inpi/tarefas.py)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def tarefa_criar(descricao: str, processo: str | None = None,
+                 prazo_interno: str | None = None) -> dict:
+    """Cria um lembrete interno (nao um prazo legal -- isso e docketing, fora daqui).
+
+    USE QUANDO: o operador pedir para anotar algo a fazer, com ou sem processo
+    e data associados. 'prazo_interno' e a data que o proprio operador digitou,
+    sem regra de LPI por tras -- nao confunda com anuidade/prazo calculado.
+    """
+    from inpi import tarefas as tf
+
+    return tf.tarefa_criar(descricao, processo=processo, prazo_interno=prazo_interno)
+
+
+@mcp.tool()
+def tarefa_listar(processo: str | None = None, status: str = "aberta") -> dict:
+    """Lista tarefas leves. status='todas' traz abertas e concluidas."""
+    from inpi import tarefas as tf
+
+    return tf.tarefa_listar(processo=processo, status=status)
+
+
+@mcp.tool()
+def tarefa_concluir(id: int) -> dict:
+    """Marca uma tarefa leve como concluida."""
+    from inpi import tarefas as tf
+
+    return tf.tarefa_concluir(id)
+
+
+# ---------------------------------------------------------------------------
 # Reivindicacoes de pedido BR publicado (PDF do INPI -- destrava o claim chart BR)
 # ---------------------------------------------------------------------------
 
