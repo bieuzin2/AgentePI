@@ -1,0 +1,22 @@
+# Watchlists da vigilancia autonoma. Edite a mao; sem numero de processo
+# inventado -- so o que o operador confirmar aqui entra no monitoramento.
+#
+# LGPD (ver docs/lgpd.md): alertas por e-mail trazem so numero de processo e
+# texto de despacho publico, nunca dado pessoal de pessoa fisica.
+
+# Numeros de processo (qualquer formato aceito por inpi.consulta.normaliza_numero)
+# cujos despachos novos disparam alerta.
+carteira:
+  - PI0803071
+
+# Nomes de titulares concorrentes: novo deposito/publicacao/decisao vira alerta.
+titulares_concorrentes:
+  - PETROLEO BRASILEIRO
+
+# Prefixos de classificacao IPC vigiados (ex.: 'B65D' para embalagens).
+ipcs:
+  - B65D
+
+# E-mail(s) destino dos alertas semanais.
+email_destino:
+  - gabrielcarvalho.ac@gmail.com

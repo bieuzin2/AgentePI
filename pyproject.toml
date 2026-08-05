@@ -7,6 +7,7 @@ name = "patentes"
 version = "0.1.0"
 description = "Agente de PI: acompanhamento processual INPI e EPO OPS via MCP"
 requires-python = ">=3.12"
+dependencies = ["pyyaml"]
 
 [tool.setuptools]
-packages = ["inpi", "epo"]
+packages = ["inpi", "epo", "vigilancia"]
