@@ -240,6 +240,83 @@ def carteira_jurisdicoes_a_revisar(cliente: str | None = None) -> dict:
     return ct.a_revisar(cliente)
 
 
+# ---------------------------------------------------------------------------
+# Alertas da vigilancia autonoma (vigilancia/executar.py alimenta esta base)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def inpi_alertas(apenas_nao_vistos: bool = True, severidade: str | None = None,
+                 limite: int = 100, marcar_vistos: list[int] | None = None) -> dict:
+    """Le os alertas gerados pela vigilancia autonoma (vigilancia/executar.py).
+
+    USE QUANDO: o operador perguntar "o que mudou desde a ultima vez" ou "tem
+    alerta pendente". Os alertas vem da execucao agendada semanal (terca 20h,
+    pos-RPI) -- watchlist de carteira, concorrentes, IPC, anuidades e (mensal)
+    status legal no exterior. Ver vigilancia/vigias.py.
+
+    Passe 'marcar_vistos' com os ids retornados para dar baixa -- proxima
+    chamada com apenas_nao_vistos=True nao os traz mais.
+
+    Args:
+        apenas_nao_vistos: True (padrao) so mostra o que ainda nao foi marcado.
+        severidade: filtra 'alta', 'media' ou 'baixa'. Omita para todas.
+        limite: 1 a 500.
+        marcar_vistos: lista de ids a marcar como vistos ANTES de listar.
+    """
+    from vigilancia.executar import BANCO as banco_alertas
+
+    if not banco_alertas.exists():
+        return {"erro": True, "mensagem": (
+            "vigilancia/data/alertas.duckdb ainda nao existe -- a vigilancia "
+            "nunca rodou. Rode 'python -m vigilancia.executar' (ou "
+            "--dry-run para testar sem enviar e-mail)."
+        )}
+
+    import duckdb
+
+    con = duckdb.connect(str(banco_alertas))
+    try:
+        if marcar_vistos:
+            con.execute(
+                f"UPDATE alertas SET visto = TRUE WHERE id IN "
+                f"({','.join('?' * len(marcar_vistos))})",
+                marcar_vistos,
+            )
+        cond, params = [], []
+        if apenas_nao_vistos:
+            cond.append("visto = FALSE")
+        if severidade:
+            cond.append("severidade = ?")
+            params.append(severidade)
+        where = (" WHERE " + " AND ".join(cond)) if cond else ""
+        params.append(max(1, min(limite, 500)))
+        cur = con.execute(
+            f"""SELECT id, tipo, severidade, processo, titular, mensagem, data,
+                       fonte, data_corte, criado_em, visto
+                FROM alertas{where}
+                ORDER BY criado_em DESC LIMIT ?""",
+            params,
+        )
+        cols = [d[0] for d in cur.description]
+        linhas = [dict(zip(cols, r)) for r in cur.fetchall()]
+        total = con.execute("SELECT count(*) FROM alertas").fetchone()[0]
+        nao_vistos = con.execute("SELECT count(*) FROM alertas WHERE visto = FALSE").fetchone()[0]
+    finally:
+        con.close()
+
+    return {
+        "total_no_banco": total,
+        "nao_vistos": nao_vistos,
+        "retornados": len(linhas),
+        "marcados_vistos_agora": marcar_vistos or [],
+        "alertas": linhas,
+        "aviso": (
+            "Alertas de vigilancia automatica, sem revisao humana. Confira o "
+            "processo original (inpi_processo) antes de agir -- em especial os "
+            "de tipo 'anulacao', que revertem um ato anterior."
+        ),
+    }
 
 
 if __name__ == "__main__":

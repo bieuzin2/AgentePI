@@ -72,3 +72,11 @@ Se o compliance decidir restringir, a mudança é pequena: filtrar
 - `inpi/inpi_mcp.py` → `_AVISO_PESSOAL`, aplicado em `inpi_prospeccao`.
 - Consulta de processo individual (`inpi_processo`) mostra PF sem rótulo: é consulta
   processual, não listagem comercial, e o dado é o mesmo que a RPI publica.
+
+## Alertas por e-mail (vigilância autônoma, Fase 1)
+
+Os alertas gerados por `vigilancia/vigias.py` e enviados por `vigilancia/email_alerta.py`
+trazem apenas número de processo, código/texto de despacho público e status legal — nunca
+nome de pessoa física de depositante ou inventor. Decisão deliberada: o e-mail sai do
+ambiente controlado do escritório para a caixa de entrada do Gmail, então o corte é mais
+conservador do que nas tools de consulta interna.
