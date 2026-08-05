@@ -241,6 +241,36 @@ def carteira_jurisdicoes_a_revisar(cliente: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Reivindicacoes de pedido BR publicado (PDF do INPI -- destrava o claim chart BR)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def inpi_reivindicacoes(numero: str) -> dict:
+    """Quadro reivindicatorio de um pedido BR publicado, lido do PDF oficial do INPI.
+
+    USE QUANDO: for montar um claim chart de um documento BR (a skill
+    analista-patentes-inpi ja suporta US/EP; isto destrava o BR).
+
+    FONTE: PDF salvo em inpi/data/pdfs/{numero_normalizado}.pdf. NAO HA download
+    automatico confiavel do portal do INPI (busca.inpi.gov.br/pePI e stateful, sem
+    endpoint publico estavel por numero -- ver docs/aceite/F4-pdf-claimchart.md).
+    Se o PDF nao estiver na pasta, a resposta traz o caminho esperado: baixe manualmente
+    no portal e salve ali.
+
+    Aceita os mesmos formatos de numero que inpi_processo.
+
+    LEIA 'aviso' e 'secoes_ausentes' sempre: PDF de imagem (sem OCR, fora de escopo
+    v2.0) e secao nao encontrada pelo marcador viram declaracao de cobertura, nunca
+    erro silencioso. Numeracao de reivindicacao e heuristica -- confira contra o
+    PDF original antes de citar em parecer.
+    """
+    from inpi import pdf_inpi
+
+    return pdf_inpi.carregar(numero)
+
+
+# ---------------------------------------------------------------------------
 # Alertas da vigilancia autonoma (vigilancia/executar.py alimenta esta base)
 # ---------------------------------------------------------------------------
 
