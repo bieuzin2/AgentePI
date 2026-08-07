@@ -21,6 +21,7 @@ dependencies = [
     "openpyxl",
     "starlette",
     "uvicorn",
+    "reportlab",
 ]
 
 [tool.setuptools]
