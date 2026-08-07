@@ -16,7 +16,6 @@ chamada de rede so pra isso).
 
 from __future__ import annotations
 
-from epo.epo_mcp import _lista, _loga_quota, _resumo_documento, _sem_resultado, _texto, cliente
 from epo.mcp_app import mcp
 
 AMOSTRA_MAXIMA = 500  # teto de itens por chamada com constituent=biblio (custa mais que so referencia)
@@ -128,6 +127,8 @@ def epo_panorama_topico(termos_ingles: str, pais: str | None = None,
     if not termos_ingles or not termos_ingles.strip():
         return {"erro": True, "mensagem": "termos_ingles nao pode ser vazio."}
     amostra = max(1, min(amostra, AMOSTRA_MAXIMA))
+
+    from epo.epo_mcp import _loga_quota, _resumo_documento, _sem_resultado, _texto, cliente
 
     cql = _monta_cql(termos_ingles, pais, desde, ate)
 
