@@ -47,15 +47,21 @@ def estimar_bytes(client: bigquery.Client, sql: str,
 def executar(client: bigquery.Client, sql: str,
              parametros: list[bigquery.ScalarQueryParameter] | None = None,
              teto_bytes: int = TETO_BYTES_PADRAO,
-             confirmar_acima_10gb: bool = False) -> list[dict]:
+             confirmar_acima_10gb: bool = False,
+             info: dict | None = None) -> list[dict]:
     """Dry-run obrigatorio, depois executa se estiver dentro do teto (ou se o
     chamador confirmou explicitamente que quer estourar o teto).
 
     Levanta ConsultaMuitoGrandeError -- nunca executa em silencio uma query
-    grande sem essa confirmacao.
+    grande sem essa confirmacao. Se 'info' for passado, e preenchido com
+    'bytes_estimados' e 'acima_do_teto' -- e como o chamador (consultas.py)
+    sabe se deve devolver aviso mesmo quando a consulta RODOU (confirmada).
     """
     parametros = parametros or []
     bytes_estimados = estimar_bytes(client, sql, parametros)
+    if info is not None:
+        info["bytes_estimados"] = bytes_estimados
+        info["acima_do_teto"] = bytes_estimados > teto_bytes
     if bytes_estimados > teto_bytes and not confirmar_acima_10gb:
         gb = bytes_estimados / 1024 ** 3
         raise ConsultaMuitoGrandeError(

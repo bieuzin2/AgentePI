@@ -23,6 +23,21 @@ _TABELA = "`patents-public-data.patents.publications`"
 FONTE = "Google Patents Public Data (patents-public-data.patents.publications)"
 
 
+def _aviso_teto(*infos: dict) -> str | None:
+    """Aviso visivel quando a consulta rodou ACIMA do teto de 10GB porque o
+    chamador passou confirmar_acima_10gb=True -- sem isto o estouro passava
+    em silencio para quem le so o resultado, nao a chamada."""
+    estourados = [i for i in infos if i.get("acima_do_teto")]
+    if not estourados:
+        return None
+    gb = max(i["bytes_estimados"] for i in estourados) / 1024 ** 3
+    return (
+        f"Consulta processou {gb:.2f} GB, acima do teto padrao de 10GB. Rodou "
+        "porque confirmar_acima_10gb=True foi passado -- confira o consumo de "
+        "quota do BigQuery (free tier: 1TB/mes)."
+    )
+
+
 def _filtro_datas(desde: str | None, ate: str | None,
                    parametros: list) -> str:
     """AAAA-MM-DD -> filtro em filing_date (INT64 AAAAMMDD no dataset)."""
@@ -57,8 +72,13 @@ def evolucao_temporal(client: bigquery.Client, cpc_prefix: str,
         GROUP BY ano, pais
         ORDER BY ano, pais
     """
-    linhas = executar(client, sql, parametros, **kw)
-    return {"fonte": FONTE, "cpc_prefix": cpc_prefix, "pais": pais, "linhas": linhas}
+    info: dict = {}
+    linhas = executar(client, sql, parametros, info=info, **kw)
+    resultado = {"fonte": FONTE, "cpc_prefix": cpc_prefix, "pais": pais, "linhas": linhas}
+    aviso = _aviso_teto(info)
+    if aviso:
+        resultado["aviso_teto_excedido"] = aviso
+    return resultado
 
 
 def top_titulares(client: bigquery.Client, cpc_prefix: str,
@@ -83,8 +103,13 @@ def top_titulares(client: bigquery.Client, cpc_prefix: str,
         ORDER BY depositos DESC
         LIMIT @limite
     """
-    linhas = executar(client, sql, parametros, **kw)
-    return {"fonte": FONTE, "cpc_prefix": cpc_prefix, "pais": pais, "linhas": linhas}
+    info: dict = {}
+    linhas = executar(client, sql, parametros, info=info, **kw)
+    resultado = {"fonte": FONTE, "cpc_prefix": cpc_prefix, "pais": pais, "linhas": linhas}
+    aviso = _aviso_teto(info)
+    if aviso:
+        resultado["aviso_teto_excedido"] = aviso
+    return resultado
 
 
 def co_classificacao(client: bigquery.Client, cpc_prefix: str,
@@ -115,8 +140,13 @@ def co_classificacao(client: bigquery.Client, cpc_prefix: str,
         ORDER BY ocorrencias DESC
         LIMIT @limite
     """
-    linhas = executar(client, sql, parametros, **kw)
-    return {"fonte": FONTE, "cpc_prefix": cpc_prefix, "linhas": linhas}
+    info: dict = {}
+    linhas = executar(client, sql, parametros, info=info, **kw)
+    resultado = {"fonte": FONTE, "cpc_prefix": cpc_prefix, "linhas": linhas}
+    aviso = _aviso_teto(info)
+    if aviso:
+        resultado["aviso_teto_excedido"] = aviso
+    return resultado
 
 
 def perfil_titular(client: bigquery.Client, nome_titular: str,
@@ -140,10 +170,16 @@ def perfil_titular(client: bigquery.Client, nome_titular: str,
         GROUP BY pais
         ORDER BY depositos DESC
     """
-    tecnologia = executar(client, sql_tecnologia, parametros, **kw)
-    geografia = executar(client, sql_geografia, list(parametros), **kw)
-    return {"fonte": FONTE, "titular": nome_titular,
-            "tecnologia": tecnologia, "geografia": geografia}
+    info_tec: dict = {}
+    info_geo: dict = {}
+    tecnologia = executar(client, sql_tecnologia, parametros, info=info_tec, **kw)
+    geografia = executar(client, sql_geografia, list(parametros), info=info_geo, **kw)
+    resultado = {"fonte": FONTE, "titular": nome_titular,
+                 "tecnologia": tecnologia, "geografia": geografia}
+    aviso = _aviso_teto(info_tec, info_geo)
+    if aviso:
+        resultado["aviso_teto_excedido"] = aviso
+    return resultado
 
 
 def demo() -> None:

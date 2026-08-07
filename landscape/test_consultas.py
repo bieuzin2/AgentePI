@@ -54,6 +54,21 @@ def test_perfil_titular_retorna_tecnologia_e_geografia():
     assert "tecnologia" in resultado and "geografia" in resultado
 
 
+def test_aviso_teto_excedido_aparece_quando_confirmado_acima_do_teto():
+    client = MagicMock()
+    client.query.return_value.total_bytes_processed = 11 * 1024 ** 3  # 11GB > teto 10GB
+    client.query.return_value.result.return_value = []
+    resultado = consultas.top_titulares(client, "H01L", confirmar_acima_10gb=True)
+    assert "aviso_teto_excedido" in resultado
+    assert "11.00 GB" in resultado["aviso_teto_excedido"]
+
+
+def test_sem_aviso_teto_quando_dentro_do_limite():
+    client = _cliente_mock()  # 100 bytes, bem abaixo do teto
+    resultado = consultas.top_titulares(client, "H01L")
+    assert "aviso_teto_excedido" not in resultado
+
+
 def test_filtro_datas_converte_para_int_aaaammdd():
     parametros: list[bigquery.ScalarQueryParameter] = []
     clausula = consultas._filtro_datas("2020-01-15", "2021-12-31", parametros)
