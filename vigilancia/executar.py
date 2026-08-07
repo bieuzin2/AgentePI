@@ -164,10 +164,17 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
         else email_alerta.enviar(alertas, destinatarios, dry_run=dry_run)
     )
 
+    from vigilancia.sync_motherduck import sincronizar
+    sync = sincronizar()
+    if not sync["ok"] and not sync.get("pulado"):
+        _loga_execucao(sucesso=False,
+                       mensagem=f"sync MotherDuck falhou: {sync['mensagem']}")
+
     _loga_execucao(sucesso=True, mensagem=f"{len(alertas)} alertas, {gravados} gravados")
 
     return {
         "executado_em": ref.isoformat(),
+        "sync_motherduck": sync,
         "desde": desde,
         "total_alertas": len(alertas),
         "gravados": gravados,
