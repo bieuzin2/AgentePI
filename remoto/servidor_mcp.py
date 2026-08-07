@@ -44,6 +44,7 @@ from epo.epo_mcp import (
     epo_status_legal,
     epo_texto_integral,
 )
+from epo.topico import epo_panorama_topico
 from inpi.consulta import (
     inpi_busca_ipc,
     inpi_busca_texto,
@@ -97,7 +98,7 @@ TOOLS = [
     cpcs_da_carteira, landscape_carteira,
     # EPO OPS (exterior: familias, status legal, texto, register)
     epo_busca, epo_biblio, epo_familia_inpadoc, epo_texto_integral,
-    epo_register, epo_status_legal, epo_quota,
+    epo_register, epo_status_legal, epo_quota, epo_panorama_topico,
 ]
 
 

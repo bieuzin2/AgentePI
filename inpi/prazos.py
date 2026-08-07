@@ -15,6 +15,7 @@ from inpi.consulta import _linhas, _marca_anulacoes, _anuidades_citadas, _prazo_
 from inpi.db import con
 from inpi.mcp_app import mcp
 from inpi.relatorios import gerar_prazos_pdf
+from inpi.titulares import chave_de
 
 # ---------------------------------------------------------------------------
 # Anuidades: projecao (a unica projecao de prazo que este servidor faz)
@@ -82,8 +83,15 @@ def _carregar_lote(
         alvo_sql = "SELECT unnest(?::VARCHAR[]) AS numero_inpi"
         params: list = [numeros]
     elif titular:
-        alvo_sql = "SELECT DISTINCT numero_inpi FROM depositantes WHERE depositante ILIKE ?"
-        params = [f"%{titular.strip()}%"]
+        # Pela CHAVE canonica, nao por ILIKE de texto (mesmo motivo do branch
+        # procurador abaixo): ILIKE '%huawei%' juntava "Huawei Digital Power" e
+        # outras entidades distintas -- contava 5.180 processos onde a chave
+        # canonica (a mesma que inpi_perfil_titular usa) conta 5.098. Todas as
+        # tools que passam por _carregar_lote(titular=...) agora contam igual.
+        alvo_sql = """SELECT DISTINCT dp.numero_inpi FROM depositantes dp
+                      JOIN titulares t ON t.original = dp.depositante
+                      WHERE t.chave = ?"""
+        params = [chave_de(titular)]
     elif procurador:
         # Pela CHAVE normalizada, nao pelo nome cru. Com ILIKE no texto, "Clarke
         # Modet" trazia 2.796 casos em vez de 44.610: perdia as grafias com espaco

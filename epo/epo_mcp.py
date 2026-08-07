@@ -20,10 +20,11 @@ from typing import Any
 
 from dogpile.cache import make_region
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
 
 import epo_ops
 from epo_ops.middlewares import Dogpile, Throttler
+
+from epo.mcp_app import mcp
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
@@ -38,8 +39,6 @@ QUOTA_LOG = ROOT / "inpi" / "data" / "epo_quota.log"
 # Poupa quota: familia INPADOC e status legal de um mesmo documento nao mudam de um
 # dia para o outro. Duas semanas de TTL, mesmo padrao da lib.
 CACHE_DBM = ROOT / "epo" / "data" / "cache.dbm"
-
-mcp = FastMCP("epo-ops")
 
 _client: epo_ops.Client | None = None
 
@@ -815,6 +814,9 @@ def epo_quota(dias: int = 7) -> dict:
             "da semana." if pct > 0.8 else ""
         ),
     }
+
+
+from epo.topico import epo_panorama_topico  # noqa: E402,F401  (registra na mcp acima)
 
 
 if __name__ == "__main__":
