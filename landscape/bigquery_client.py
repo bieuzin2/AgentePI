@@ -22,16 +22,19 @@ class ConsultaMuitoGrandeError(Exception):
 
 
 def cliente(projeto: str | None = None) -> bigquery.Client:
-    """Cliente BigQuery via ADC. Levanta erro claro se as credenciais nao
-    estiverem configuradas (usuario ainda nao rodou `gcloud auth
-    application-default login`)."""
+    """Cliente BigQuery via ADC (local: `gcloud auth application-default
+    login`; remoto: GOOGLE_APPLICATION_CREDENTIALS apontando pro JSON da
+    service account). Levanta erro claro com a causa original -- nunca so
+    "credenciais ausentes" quando o problema e outro (JSON invalido, sem
+    permissao, projeto errado)."""
     try:
         return bigquery.Client(project=projeto)
     except Exception as exc:  # DefaultCredentialsError e outras da lib google-auth
         raise RuntimeError(
-            "Credenciais do Google Cloud (ADC) nao encontradas. Rode "
-            "'gcloud auth application-default login' apos instalar o gcloud CLI "
-            "e criar o projeto GCP (docs/plano-v2.md 4.6)."
+            "Falha ao criar cliente do Google Cloud (ADC). Local: rode "
+            "'gcloud auth application-default login'. Remoto: confira "
+            "GOOGLE_APPLICATION_CREDENTIALS. Causa original: "
+            f"{type(exc).__name__}: {exc}"
         ) from exc
 
 
