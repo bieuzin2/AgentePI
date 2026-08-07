@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,8 +27,14 @@ _con: duckdb.DuckDBPyConnection | None = None
 def _conectar() -> duckdb.DuckDBPyConnection:
     global _con
     if _con is None:
-        BANCO.parent.mkdir(parents=True, exist_ok=True)
-        _con = duckdb.connect(str(BANCO))
+        token = os.environ.get("MOTHERDUCK_TOKEN")
+        if token:
+            _con = duckdb.connect(f"md:?motherduck_token={token}")
+            _con.execute("CREATE DATABASE IF NOT EXISTS landscape_cache")
+            _con.execute("USE landscape_cache")
+        else:
+            BANCO.parent.mkdir(parents=True, exist_ok=True)
+            _con = duckdb.connect(str(BANCO))
         _con.execute(
             "CREATE TABLE IF NOT EXISTS landscape_cache ("
             "chave VARCHAR PRIMARY KEY, resultado VARCHAR, criado_em TIMESTAMP)"

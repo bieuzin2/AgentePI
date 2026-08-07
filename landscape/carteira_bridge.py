@@ -16,20 +16,34 @@ frequente na carteira, usado como prefixo CPC nas consultas ao landscape.
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 
 import duckdb
 
 from inpi.carteira import BANCO as BANCO_CARTEIRA
+from inpi.carteira import conectar_carteira
 from inpi.db import BANCO as BANCO_INPI
 from landscape import consultas
 from landscape.mcp_app import _rodar, mcp
 
 
+def _conectar_inpi() -> duckdb.DuckDBPyConnection:
+    """Conexao efemera ao banco INPI (nao o singleton de inpi.db -- este
+    modulo roda no processo do servidor 'landscape', e abrir aqui evita
+    depender do processo do servidor 'inpi')."""
+    token = os.environ.get("MOTHERDUCK_TOKEN")
+    if token:
+        c = duckdb.connect(f"md:?motherduck_token={token}")
+        c.execute("USE inpi")
+        return c
+    return duckdb.connect(str(BANCO_INPI), read_only=True)
+
+
 def _numeros_br_da_carteira(cliente: str) -> list[str]:
-    if not BANCO_CARTEIRA.exists():
+    if not os.environ.get("MOTHERDUCK_TOKEN") and not BANCO_CARTEIRA.exists():
         return []
-    con = duckdb.connect(str(BANCO_CARTEIRA), read_only=True)
+    con = conectar_carteira(BANCO_CARTEIRA, read_only=True)
     try:
         return [r[0] for r in con.execute(
             "SELECT DISTINCT numero_norm FROM casos WHERE cliente = ? AND jurisdicao = 'BR'",
@@ -53,10 +67,10 @@ def cpcs_da_carteira(cliente: str, top: int = 3) -> dict:
                 "ou carteira_descobrir antes."
             ),
         }
-    if not BANCO_INPI.exists():
+    if not os.environ.get("MOTHERDUCK_TOKEN") and not BANCO_INPI.exists():
         return {"erro": True, "mensagem": f"Banco INPI ausente: {BANCO_INPI}."}
 
-    con = duckdb.connect(str(BANCO_INPI), read_only=True)
+    con = _conectar_inpi()
     try:
         linhas = con.execute(
             "SELECT simbolo FROM ipc WHERE numero_inpi IN (SELECT unnest(?::VARCHAR[]))",

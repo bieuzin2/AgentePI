@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import unicodedata
 from datetime import date, datetime
@@ -62,15 +63,35 @@ CREATE TABLE IF NOT EXISTS casos (
 FONTES = {"lista", "inpi", "inpadoc", "inpadoc-legal", "epo-register"}
 
 
-def con(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    BANCO.parent.mkdir(parents=True, exist_ok=True)
-    if read_only and not BANCO.exists():
+def conectar_carteira(banco: Path = None, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    """Conexao ao banco de carteira: MotherDuck (MOTHERDUCK_TOKEN no
+    ambiente -- Fase 6, servidor remoto sem arquivo local) ou o arquivo local
+    passado em 'banco'. Compartilhada por carteira.py, tarefas.py, radar.py e
+    landscape/carteira_bridge.py -- todos vivem na mesma base logica.
+
+    'banco' recebe o CAMINHO, nao um default fixo aqui: cada chamador passa
+    a sua propria variavel BANCO/BANCO_TAREFAS/BANCO_CARTEIRA de modulo, para
+    que testes que monkeypatcham essa variavel continuem valendo mesmo com a
+    conexao centralizada aqui."""
+    token = os.environ.get("MOTHERDUCK_TOKEN")
+    if token:
+        c = duckdb.connect(f"md:?motherduck_token={token}")
+        c.execute("CREATE DATABASE IF NOT EXISTS carteira")
+        c.execute("USE carteira")
+        return c
+    banco = banco if banco is not None else BANCO
+    banco.parent.mkdir(parents=True, exist_ok=True)
+    if read_only and not banco.exists():
         raise RuntimeError(
-            f"Nenhuma carteira ingerida ainda ({BANCO} nao existe). "
+            f"Nenhuma carteira ingerida ainda ({banco} nao existe). "
             "Use carteira_ingerir com a lista do escritorio, ou carteira_descobrir "
             "para levantar o que a base do INPI conhece."
         )
-    c = duckdb.connect(str(BANCO), read_only=read_only)
+    return duckdb.connect(str(banco), read_only=read_only)
+
+
+def con(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    c = conectar_carteira(BANCO, read_only)
     if not read_only:
         c.execute(ESQUEMA)
     return c

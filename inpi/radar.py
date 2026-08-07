@@ -19,6 +19,7 @@ from __future__ import annotations
 import duckdb
 
 from inpi import tarefas as tf
+from inpi.carteira import conectar_carteira
 from inpi.consulta import _linhas
 from inpi.mcp_app import mcp
 from inpi.mercado import _AVISO_PESSOAL, _chave_escritorio
@@ -34,8 +35,7 @@ CREATE TABLE IF NOT EXISTS radar_watermark (
 
 
 def _con_radar(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    BANCO_TAREFAS.parent.mkdir(parents=True, exist_ok=True)
-    c = duckdb.connect(str(BANCO_TAREFAS), read_only=read_only)
+    c = conectar_carteira(BANCO_TAREFAS, read_only)
     if not read_only:
         c.execute(ESQUEMA_RADAR)
     return c

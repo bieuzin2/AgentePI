@@ -7,11 +7,12 @@ inpi/prazos.py. Mesmo banco de carteira.py (carteira.duckdb), tabela propria.
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 
 import duckdb
 
-from inpi.carteira import BANCO
+from inpi.carteira import BANCO, conectar_carteira
 
 ESQUEMA = """
 CREATE SEQUENCE IF NOT EXISTS tarefas_id_seq START 1;
@@ -30,11 +31,16 @@ _ORIGEM = "lembrete interno, não é prazo legal (não é docketing)"
 
 
 def con(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    BANCO.parent.mkdir(parents=True, exist_ok=True)
-    c = duckdb.connect(str(BANCO), read_only=read_only)
+    c = conectar_carteira(BANCO, read_only)
     if not read_only:
         c.execute(ESQUEMA)
     return c
+
+
+def _banco_disponivel() -> bool:
+    """MotherDuck sempre 'disponivel' (a base pode existir na nuvem mesmo
+    sem arquivo local); local so quando o arquivo ja foi criado."""
+    return bool(os.environ.get("MOTHERDUCK_TOKEN")) or BANCO.exists()
 
 
 def tarefa_criar(descricao: str, processo: str | None = None,
@@ -55,7 +61,7 @@ def tarefa_criar(descricao: str, processo: str | None = None,
 
 def tarefa_listar(processo: str | None = None, status: str = "aberta") -> dict:
     """Lista tarefas. status='todas' devolve abertas e concluidas."""
-    if not BANCO.exists():
+    if not _banco_disponivel():
         return {"lista": [], "origem": _ORIGEM}
     c = con(read_only=True)
     try:
@@ -100,7 +106,7 @@ def tarefas_vencendo(dias: int = 7, hoje: str | None = None) -> list[dict]:
     direto da tabela (tarefa leve nao justifica pacote de vigilancia)."""
     ref = date.fromisoformat(hoje) if hoje else date.today()
     limite = (ref + timedelta(days=dias)).isoformat()
-    if not BANCO.exists():
+    if not _banco_disponivel():
         return []
     r = tarefa_listar(status="aberta")
     return [t for t in r["lista"]
