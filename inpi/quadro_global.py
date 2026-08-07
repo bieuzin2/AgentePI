@@ -165,7 +165,7 @@ def montar(titular: str, ate: str, hoje: str | None = None,
            criterio: str = "vencimento") -> dict:
     """Quadro Brasil + exterior de um cliente."""
     from inpi import inpi_mcp as m
-    from familia_epo import familia
+    from inpi.familia_epo import familia
 
     d_hoje = date.fromisoformat(hoje) if hoje else date.today()
     d_ate = date.fromisoformat(ate)

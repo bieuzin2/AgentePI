@@ -16,6 +16,7 @@ Este arquivo so registra as tools MCP e importa a logica dos modulos abaixo
   inpi/prazos.py   -- motor de prazos/anuidades (projecao art. 84, novidades)
   inpi/mercado.py  -- inteligencia de mercado e escritorios
   inpi/gargalos.py -- tempo por fase do exame, backlog e comparativo de pipeline
+  inpi/financeiro.py -- projecao de anuidades por mes/pais e janelas de desistencia
 As tools de carteira (thin wrappers sobre inpi/carteira.py) ficam aqui mesmo.
 """
 
@@ -70,6 +71,11 @@ from inpi.gargalos import (  # noqa: F401
     inpi_backlog,
     inpi_pipeline_comparado,
 )
+from inpi.financeiro import (  # noqa: F401
+    financeiro_projecao,
+    financeiro_janelas_desistencia,
+)
+from inpi.saude import carteira_saude  # noqa: F401
 
 RAIZ = Path(__file__).resolve().parent
 
