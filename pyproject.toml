@@ -11,7 +11,7 @@ dependencies = [
     "pyyaml",
     "pypdf",
     "google-cloud-bigquery",
-    "mcp",
+    "mcp>=1.28,<2",
     "duckdb",
     "python-dotenv",
     "dogpile.cache",
@@ -19,6 +19,8 @@ dependencies = [
     "httpx",
     "requests",
     "openpyxl",
+    "starlette",
+    "uvicorn",
 ]
 
 [tool.setuptools]
