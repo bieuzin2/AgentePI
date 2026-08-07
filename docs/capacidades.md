@@ -236,6 +236,24 @@ nem SLA do INPI. Cada tool documenta a própria ressalva no `aviso`/`nota` do re
 
 ---
 
+## Eficiência interna e curadoria (Fases A/E/F do refinamento, 2026-08-07)
+
+| Pergunta | Status |
+| :--- | :--- |
+| Este titular é cliente curado Clarke Modet ou agrupamento automático? | ✅ `inpi_titular_resolver` — bloco `normalizacao` (curada/automatica) + `possiveis_relacionados` (nunca somados); curadoria em `inpi/referencias/clientes-clarke.csv`, top-20 descoberto por `scripts/descobrir_clientes.py` |
+| Onde a família do meu caso CADUCOU no exterior segundo o INPADOC? | ✅ `carteira_auditoria_vigencia` — cruza projeção local com PG25/PGFP por país (via membro EP); membros sem EP saem como `nao_auditados` |
+| O titular no INPI bate com o applicant da família no EPO? | ✅ mesmo retorno acima, campo `qualidade_dados` — flag de cessão não averbada/grafia divergente |
+| Me dá o panorama completo do cliente X numa pergunta | ✅ `cliente_dossie` — processos + taxa de deferimento + tempo até concessão + saúde + anuidades + geografia, cada seção com fonte |
+| O que vence nos próximos 30 dias em TODAS as carteiras? | ✅ `fila_semana` — anuidades BR+exterior + tarefas internas, ordenado por vencimento; `criar_tarefas=True` abre lembretes com dedup |
+| Tem oposição contra os EPs do cliente? Janela do art. 99 ainda aberta? | ✅ `carteira_oposicoes_ep` — situação do Register + janela de 9 meses da menção de concessão |
+
+Quota EPO (4 GB/semana): `carteira_auditoria_vigencia` e `carteira_oposicoes_ep`
+têm `max_casos` (padrão 20) e rodam por cliente sob demanda — nunca varredura da
+base inteira. Proveniência: tools de carteira carregam `proveniencia` (carteira
+ingerida = curada); matching por nome carrega `normalizacao` (curada/automatica).
+
+---
+
 ## O que ele nunca vai responder
 
 Não está em base pública nenhuma, e nenhum trabalho de engenharia resolve:

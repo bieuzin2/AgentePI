@@ -62,8 +62,12 @@ from inpi.prazos import (
     inpi_prazos_carteira,
     inpi_regra_jurisdicao,
 )
+from inpi.dossie import cliente_dossie
+from inpi.fila import fila_semana
+from inpi.oposicoes import carteira_oposicoes_ep
 from inpi.radar import inpi_radar
 from inpi.saude import carteira_saude
+from inpi.vigencia import carteira_auditoria_vigencia
 from landscape.carteira_bridge import cpcs_da_carteira, landscape_carteira
 from landscape.landscape_mcp import (
     landscape_co_classificacao,
@@ -83,6 +87,9 @@ TOOLS = [
     inpi_tempo_fases, inpi_backlog, inpi_pipeline_comparado,
     financeiro_projecao, financeiro_janelas_desistencia,
     carteira_saude, inpi_radar,
+    # eficiencia interna (Fases E/F do refinamento)
+    carteira_auditoria_vigencia, cliente_dossie, fila_semana,
+    carteira_oposicoes_ep,
     # landscape (BigQuery)
     landscape_evolucao_temporal, landscape_top_titulares,
     landscape_co_classificacao, landscape_perfil_titular,

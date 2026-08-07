@@ -77,6 +77,10 @@ from inpi.financeiro import (  # noqa: F401
 )
 from inpi.saude import carteira_saude  # noqa: F401
 from inpi.radar import inpi_radar  # noqa: F401
+from inpi.vigencia import carteira_auditoria_vigencia  # noqa: F401
+from inpi.dossie import cliente_dossie  # noqa: F401
+from inpi.fila import fila_semana  # noqa: F401
+from inpi.oposicoes import carteira_oposicoes_ep  # noqa: F401
 
 RAIZ = Path(__file__).resolve().parent
 
