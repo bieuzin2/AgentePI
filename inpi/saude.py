@@ -113,8 +113,11 @@ def carteira_saude(cliente: str, hoje: str | None = None) -> dict:
     if cart["sem_data_base"]:
         lacunas.append(f"{len(cart['sem_data_base'])} caso(s) sem data-base nenhuma")
 
+    from inpi.titulares import PROVENIENCIA_CARTEIRA
+
     return {
         "cliente": cliente, "referencia": d_hoje.isoformat(),
+        "proveniencia": PROVENIENCIA_CARTEIRA,
         "score": score,
         "componentes": {
             "vigencia": {"pontos": p_vigencia, "de": 40,

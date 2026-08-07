@@ -140,8 +140,11 @@ def landscape_carteira(cliente: str, top_cpc: int = 3, pais: str | None = None,
             "evolucao_temporal": evolucao.get("linhas", []),
         }
 
+    from inpi.titulares import PROVENIENCIA_CARTEIRA
+
     return {
         "cliente": cliente,
+        "proveniencia": PROVENIENCIA_CARTEIRA,
         "casos_br_na_carteira": base["casos_br_na_carteira"],
         "top_cpc_da_carteira": base["top_cpc"],
         "por_cpc": por_cpc,

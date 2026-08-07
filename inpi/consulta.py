@@ -381,11 +381,15 @@ def inpi_titular_resolver(nome: str) -> dict:
         [principal],
     ) if principal else []
 
+    from inpi.titulares import relacionados, resolver
+
     return {
         "nome_consultado": nome,
         "chave_principal": principal,
         "chaves_encontradas": chaves,
         "grafias_da_principal": grafias,
+        "normalizacao": resolver(principal),
+        "possiveis_relacionados": relacionados(principal),
         "nota": (
             "Varias chaves para o mesmo grupo economico e esperado: subsidiarias tem "
             "CNPJ proprio (Petrobras, Transpetro e Petrobras Distribuidora sao raizes "
@@ -437,8 +441,12 @@ def inpi_portfolio_titular(nome: str, agrupar: bool = True, limite: int = 50) ->
                ORDER BY data_deposito DESC NULLS LAST LIMIT ?""",
             [f"%{nome.strip()}%", limite],
         )
+    from inpi.titulares import resolver
+
+    chaves_vistas = sorted({l["titular_chave"] for l in linhas if l.get("titular_chave")})
     return {"nome_buscado": nome, "agrupado": agrupar,
-            "retornados": len(linhas), "resultados": linhas}
+            "retornados": len(linhas), "resultados": linhas,
+            "normalizacao": [resolver(c) for c in chaves_vistas] or [resolver(None)]}
 
 
 @mcp.tool()
