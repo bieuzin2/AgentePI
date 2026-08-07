@@ -7,7 +7,19 @@ name = "patentes"
 version = "0.1.0"
 description = "Agente de PI: acompanhamento processual INPI e EPO OPS via MCP"
 requires-python = ">=3.12"
-dependencies = ["pyyaml", "pypdf", "google-cloud-bigquery"]
+dependencies = [
+    "pyyaml",
+    "pypdf",
+    "google-cloud-bigquery",
+    "mcp",
+    "duckdb",
+    "python-dotenv",
+    "dogpile.cache",
+    "python-epo-ops-client",
+    "httpx",
+    "requests",
+    "openpyxl",
+]
 
 [tool.setuptools]
 packages = ["inpi", "epo", "vigilancia", "busca", "landscape"]

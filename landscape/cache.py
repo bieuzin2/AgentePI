@@ -32,6 +32,10 @@ def _conectar() -> duckdb.DuckDBPyConnection:
             "CREATE TABLE IF NOT EXISTS landscape_cache ("
             "chave VARCHAR PRIMARY KEY, resultado VARCHAR, criado_em TIMESTAMP)"
         )
+        colunas = {row[1] for row in _con.execute(
+            "PRAGMA table_info('landscape_cache')").fetchall()}
+        if "nome_consulta" not in colunas:
+            _con.execute("ALTER TABLE landscape_cache ADD COLUMN nome_consulta VARCHAR")
     return _con
 
 
@@ -58,9 +62,9 @@ def obter(nome_consulta: str, args: dict) -> dict | None:
 def salvar(nome_consulta: str, args: dict, resultado: dict) -> None:
     con = _conectar()
     con.execute(
-        "INSERT OR REPLACE INTO landscape_cache VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO landscape_cache VALUES (?, ?, ?, ?)",
         [_chave(nome_consulta, args), json.dumps(resultado, default=str),
-         datetime.now(timezone.utc)],
+         datetime.now(timezone.utc), nome_consulta],
     )
 
 

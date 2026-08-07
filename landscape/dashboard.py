@@ -14,12 +14,12 @@ from landscape import cache
 
 
 def resumo_para_dashboard() -> dict | None:
-    """Ultimo resultado de cada consulta landscape ja cacheada, ou None se o
-    cache ainda estiver vazio/ausente."""
+    """Ultimo resultado de cada tipo de consulta landscape ja cacheada
+    (nome_consulta), ou None se o cache ainda estiver vazio/ausente."""
     try:
         con = cache._conectar()
         linhas = con.execute(
-            "SELECT chave, resultado, criado_em FROM landscape_cache "
+            "SELECT chave, resultado, criado_em, nome_consulta FROM landscape_cache "
             "ORDER BY criado_em DESC"
         ).fetchall()
     except Exception:
@@ -27,11 +27,19 @@ def resumo_para_dashboard() -> dict | None:
     if not linhas:
         return None
     import json
+
+    por_tipo: dict[str, dict] = {}
+    for _chave, resultado_json, criado_em, nome_consulta in linhas:
+        tipo = nome_consulta or "desconhecido"
+        if tipo not in por_tipo:
+            por_tipo[tipo] = {"resultado": json.loads(resultado_json), "gerado_em": str(criado_em)}
+
     return {
         "fonte": "Google Patents Public Data (patents-public-data.patents.publications)",
         "consultas_cacheadas": len(linhas),
-        "mais_recente": json.loads(linhas[0][1]),
+        "mais_recente": por_tipo[linhas[0][3] or "desconhecido"]["resultado"],
         "gerado_em": str(linhas[0][2]),
+        "por_tipo": por_tipo,
     }
 
 
