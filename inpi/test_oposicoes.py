@@ -24,6 +24,8 @@ def _rodar(register, hoje="2026-08-07"):
     fam = {"membros": [{"pais": "EP", "referencia": "EP-1-B1"}]}
     with patch.object(op, "_carregar_lote", return_value=(estados, 1)), \
          patch.object(op, "familia", return_value=fam), \
+         patch.object(op, "chave_de", return_value="X"), \
+         patch.object(op, "resolver", return_value={"nivel": "automatica", "chave": "X"}), \
          patch("epo.epo_mcp.epo_register", return_value=register):
         return op.carteira_oposicoes_ep("Cliente X", hoje=hoje)
 

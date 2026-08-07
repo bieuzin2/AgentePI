@@ -19,7 +19,7 @@ QUADRO = {
 
 
 def test_fila_consolida_e_ordena():
-    with patch.object(fila, "_clientes_da_carteira", return_value=["A", "B"]), \
+    with patch.object(fila, "_clientes_curados", return_value=["A", "B"]), \
          patch.object(fila.qg, "montar", return_value=QUADRO), \
          patch.object(fila.tarefas, "tarefas_vencendo", return_value=[
              {"id": 7, "processo": None, "descricao": "ligar associado",
@@ -40,7 +40,7 @@ def test_fila_cliente_com_falha_nao_some_com_o_resto():
             raise RuntimeError("EPO fora")
         return QUADRO
 
-    with patch.object(fila, "_clientes_da_carteira", return_value=["A", "B"]), \
+    with patch.object(fila, "_clientes_curados", return_value=["A", "B"]), \
          patch.object(fila.qg, "montar", side_effect=montar), \
          patch.object(fila.tarefas, "tarefas_vencendo", return_value=[]):
         r = fila.fila_semana(dias=30, hoje="2026-08-07")
@@ -51,7 +51,7 @@ def test_fila_cliente_com_falha_nao_some_com_o_resto():
 
 def test_criar_tarefas_com_dedup():
     ja_existe = ("[fila] 5a anuidade de BR 1 (A) vence 2026-08-20")
-    with patch.object(fila, "_clientes_da_carteira", return_value=["A"]), \
+    with patch.object(fila, "_clientes_curados", return_value=["A"]), \
          patch.object(fila.qg, "montar", return_value=QUADRO), \
          patch.object(fila.tarefas, "tarefas_vencendo", return_value=[]), \
          patch.object(fila.tarefas, "tarefa_listar",
@@ -61,3 +61,13 @@ def test_criar_tarefas_com_dedup():
 
     criar.assert_not_called()  # dedup: tarefa identica ja aberta
     assert r["tarefas_criadas"] == []
+
+
+def test_clientes_override_ignora_lista_curada():
+    with patch.object(fila, "_clientes_curados",
+                      side_effect=AssertionError("nao deveria ler a lista curada")), \
+         patch.object(fila.qg, "montar", return_value={"linhas": []}), \
+         patch.object(fila.tarefas, "tarefas_vencendo", return_value=[]):
+        r = fila.fila_semana(dias=30, hoje="2026-08-07", clientes=["Titular Avulso"])
+    assert r["clientes_varridos"] == 1
+    assert r["base_de_clientes"] == "titulares informados na chamada"

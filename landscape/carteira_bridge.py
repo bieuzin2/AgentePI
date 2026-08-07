@@ -1,17 +1,19 @@
-"""Ponte carteira x landscape: quais tecnologias (CPC) dominam a carteira de
-um cliente, e o que a inteligencia de mercado (BigQuery) mostra sobre elas --
-plano-v2 Fase 4.
+"""Ponte titular x landscape: quais tecnologias (CPC) dominam o portfolio BR de
+um titular, e o que a inteligencia de mercado (BigQuery) mostra sobre elas --
+Fase 4, reescrito na Fase G para rodar do TITULAR REAL (base INPI), sem
+depender de upload manual de carteira.
 
-Conexoes DuckDB EFEMERAS e read-only, abertas e fechadas dentro da funcao: os
-bancos inpi.duckdb e carteira.duckdb ja tem conexao singleton nos seus proprios
-modulos (inpi.db.con, inpi.carteira.con), mas aquelas vivem no processo do
-servidor MCP 'inpi'. Este modulo roda dentro do servidor 'landscape' -- abrir
-conexao propria evita depender do processo alheio e evita lock cruzado.
+Conexao DuckDB EFEMERA e read-only, aberta e fechada dentro da funcao: o banco
+inpi.duckdb ja tem conexao singleton em inpi.db.con, mas aquela vive no processo
+do servidor MCP 'inpi'. Este modulo roda dentro do servidor 'landscape' -- abrir
+conexao propria evita depender do processo alheio e evita lock cruzado. Por isso
+a resolucao nome->chave e as agregacoes rodam por esta conexao, nao por
+titulares.chave_de (que usa o singleton do processo 'inpi').
 
 IPC ~ CPC no nivel de subclasse (4 caracteres, ex. 'A61K'): os dois sistemas
 compartilham a mesma hierarquia ate esse nivel; divergem so em grupos/subgrupos
 mais profundos. Por isso 'top_cpc' aqui e, na pratica, o prefixo IPC mais
-frequente na carteira, usado como prefixo CPC nas consultas ao landscape.
+frequente no portfolio, usado como prefixo CPC nas consultas ao landscape.
 """
 
 from __future__ import annotations
@@ -21,8 +23,6 @@ from collections import Counter
 
 import duckdb
 
-from inpi.carteira import BANCO as BANCO_CARTEIRA
-from inpi.carteira import conectar_carteira
 from inpi.db import BANCO as BANCO_INPI
 from landscape import consultas
 from landscape.mcp_app import _rodar, mcp
@@ -40,60 +40,63 @@ def _conectar_inpi() -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(BANCO_INPI), read_only=True)
 
 
-def _numeros_br_da_carteira(cliente: str) -> list[str]:
-    if not os.environ.get("MOTHERDUCK_TOKEN") and not BANCO_CARTEIRA.exists():
-        return []
-    con = conectar_carteira(BANCO_CARTEIRA, read_only=True)
-    try:
-        return [r[0] for r in con.execute(
-            "SELECT DISTINCT numero_norm FROM casos WHERE cliente = ? AND jurisdicao = 'BR'",
-            [cliente]).fetchall()]
-    finally:
-        con.close()
+def _ipc_do_titular(con: duckdb.DuckDBPyConnection, nome: str) -> tuple[str | None, list[str]]:
+    """Chave canonica do titular (mais processada) e os simbolos IPC de todo o
+    seu portfolio BR -- tudo por UMA conexao (a efemera do processo landscape)."""
+    chave_row = con.execute(
+        """SELECT t.chave FROM depositantes dp JOIN titulares t ON t.original = dp.depositante
+           WHERE dp.depositante ILIKE ? GROUP BY t.chave
+           ORDER BY count(DISTINCT dp.numero_inpi) DESC LIMIT 1""",
+        [f"%{nome.strip()}%"],
+    ).fetchone()
+    if not chave_row:
+        return None, []
+    chave = chave_row[0]
+    simbolos = [r[0] for r in con.execute(
+        """SELECT i.simbolo FROM ipc i
+           WHERE i.numero_inpi IN (
+             SELECT DISTINCT dp.numero_inpi FROM depositantes dp
+             JOIN titulares t ON t.original = dp.depositante WHERE t.chave = ?)""",
+        [chave],
+    ).fetchall()]
+    return chave, simbolos
 
 
 def cpcs_da_carteira(cliente: str, top: int = 3) -> dict:
-    """Prefixos CPC (4 caracteres) mais frequentes na carteira BR de um cliente.
+    """Prefixos CPC (4 caracteres) mais frequentes no portfolio BR de um titular.
 
     USE QUANDO: for escolher em qual tecnologia rodar uma consulta landscape
-    para ESTE cliente especificamente, sem adivinhar a mao.
+    para ESTE titular especificamente, sem adivinhar a mao.
     """
-    brs = _numeros_br_da_carteira(cliente)
-    if not brs:
-        return {
-            "erro": True,
-            "mensagem": (
-                f"Nenhum caso BR na carteira de {cliente!r}. Rode carteira_ingerir "
-                "ou carteira_descobrir antes."
-            ),
-        }
     if not os.environ.get("MOTHERDUCK_TOKEN") and not BANCO_INPI.exists():
         return {"erro": True, "mensagem": f"Banco INPI ausente: {BANCO_INPI}."}
 
     con = _conectar_inpi()
     try:
-        linhas = con.execute(
-            "SELECT simbolo FROM ipc WHERE numero_inpi IN (SELECT unnest(?::VARCHAR[]))",
-            [brs],
-        ).fetchall()
+        chave, simbolos = _ipc_do_titular(con, cliente)
     finally:
         con.close()
 
-    contagem = Counter(
-        simbolo[:4] for (simbolo,) in linhas if simbolo and len(simbolo) >= 4
-    )
+    if not chave:
+        return {
+            "erro": True,
+            "mensagem": (f"Nenhum titular casou com {cliente!r} na base INPI. "
+                         "Confira a grafia ou use inpi_titular_resolver."),
+        }
+
+    contagem = Counter(s[:4] for s in simbolos if s and len(s) >= 4)
     top = max(1, min(top, 10))
     return {
         "cliente": cliente,
-        "casos_br_na_carteira": len(brs),
+        "chave_titular": chave,
         "casos_com_ipc": sum(contagem.values()),
         "cpc_distintos": len(contagem),
         "top_cpc": [cpc for cpc, _ in contagem.most_common(top)],
         "distribuicao": dict(contagem.most_common(20)),
         "nota": (
             "IPC ~ CPC ate o nivel de subclasse (4 caracteres) -- os codigos "
-            "aqui sao prefixo IPC da carteira, usados como prefixo CPC no "
-            "landscape (Google Patents Public Data classifica por CPC)."
+            "aqui sao prefixo IPC do portfolio BR do titular, usados como prefixo "
+            "CPC no landscape (Google Patents Public Data classifica por CPC)."
         ),
     }
 
@@ -111,7 +114,7 @@ def landscape_carteira(cliente: str, top_cpc: int = 3, pais: str | None = None,
     cliente precisar dizer em qual tecnologia olhar.
 
     Args:
-        cliente: nome do cliente na carteira (carteira_ingerir/carteira_descobrir).
+        cliente: nome do titular (resolvido na base INPI, sem upload).
         top_cpc: quantos prefixos CPC mais frequentes consultar (1 a 10).
         pais: filtro de pais opcional nas consultas de landscape.
         desde/ate: 'AAAA-MM-DD' opcionais.
@@ -135,18 +138,17 @@ def landscape_carteira(cliente: str, top_cpc: int = 3, pais: str | None = None,
             confirmar_acima_10gb=confirmar_acima_10gb,
         )
         por_cpc[cpc] = {
-            "casos_da_carteira_nesse_cpc": base["distribuicao"].get(cpc, 0),
+            "processos_do_titular_nesse_cpc": base["distribuicao"].get(cpc, 0),
             "top_titulares_mundiais": top_titulares.get("linhas", []),
             "evolucao_temporal": evolucao.get("linhas", []),
         }
 
-    from inpi.titulares import PROVENIENCIA_CARTEIRA
+    from inpi.titulares import resolver
 
     return {
         "cliente": cliente,
-        "proveniencia": PROVENIENCIA_CARTEIRA,
-        "casos_br_na_carteira": base["casos_br_na_carteira"],
-        "top_cpc_da_carteira": base["top_cpc"],
+        "normalizacao": resolver(base.get("chave_titular")),
+        "top_cpc_do_titular": base["top_cpc"],
         "por_cpc": por_cpc,
         "fonte_landscape": consultas.FONTE,
         "nota": base["nota"],

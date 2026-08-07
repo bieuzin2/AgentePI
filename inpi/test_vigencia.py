@@ -36,6 +36,8 @@ def test_auditoria_alerta_caducidade_e_pula_sem_ep():
          patch.object(vg, "familia", side_effect=lambda n: FAMILIAS[n]), \
          patch("epo.epo_mcp.epo_status_legal", return_value=STATUS), \
          patch("epo.epo_mcp.epo_biblio", return_value=biblio), \
+         patch.object(vg, "chave_de", return_value="ACME"), \
+         patch.object(vg, "resolver", return_value={"nivel": "curada", "chave": "ACME"}), \
          patch("inpi.db.con", return_value=_con_mock(["ACME CORP LTDA"])):
         r = vg.carteira_auditoria_vigencia("Cliente X")
 
@@ -46,7 +48,7 @@ def test_auditoria_alerta_caducidade_e_pula_sem_ep():
     assert r["nao_auditados"][0]["paises"] == ["US"]
     # 'ACME CORP LTDA' normaliza para 'ACME CORP' -> sem flag de qualidade
     assert r["qualidade_dados"] == []
-    assert r["proveniencia"]["nivel"] == "curada"
+    assert r["normalizacao"]["nivel"] == "curada"
 
 
 def test_qualidade_dados_flag_quando_titular_diverge():
@@ -56,6 +58,8 @@ def test_qualidade_dados_flag_quando_titular_diverge():
          patch.object(vg, "familia", side_effect=lambda n: FAMILIAS[n]), \
          patch("epo.epo_mcp.epo_status_legal", return_value=STATUS), \
          patch("epo.epo_mcp.epo_biblio", return_value=biblio), \
+         patch.object(vg, "chave_de", return_value="X"), \
+         patch.object(vg, "resolver", return_value={"nivel": "automatica", "chave": "X"}), \
          patch("inpi.db.con", return_value=_con_mock(["ACME CORP"])):
         r = vg.carteira_auditoria_vigencia("Cliente X")
 
@@ -68,7 +72,9 @@ def test_qualidade_dados_flag_quando_titular_diverge():
 def test_familia_com_erro_vira_sem_familia():
     with patch.object(vg, "_carregar_lote",
                       return_value=({"BR9": {"encerrado_em": None}}, 1)), \
-         patch.object(vg, "familia", return_value={"erro": "404", "membros": []}):
+         patch.object(vg, "familia", return_value={"erro": "404", "membros": []}), \
+         patch.object(vg, "chave_de", return_value="X"), \
+         patch.object(vg, "resolver", return_value={"nivel": "automatica", "chave": "X"}):
         r = vg.carteira_auditoria_vigencia("Cliente X")
     assert r["sem_familia_consultada"] == ["BR9"]
     assert r["casos_auditados"] == 0

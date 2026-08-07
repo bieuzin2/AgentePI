@@ -15,7 +15,7 @@ from datetime import date
 from inpi.familia_epo import familia
 from inpi.mcp_app import mcp
 from inpi.prazos import _carregar_lote
-from inpi.titulares import PROVENIENCIA_CARTEIRA
+from inpi.titulares import chave_de, resolver
 from inpi.vigencia import _membro_ep
 
 MESES_OPOSICAO = 9  # art. 99(1) EPC
@@ -102,7 +102,7 @@ def carteira_oposicoes_ep(cliente: str, max_casos: int = 20,
 
     return {
         "cliente": cliente,
-        "proveniencia": PROVENIENCIA_CARTEIRA,
+        "normalizacao": resolver(chave_de(cliente)),
         "fonte": "European Patent Register (EPO OPS)",
         "referencia": d_hoje.isoformat(),
         "casos_ativos": len(ativos),

@@ -45,11 +45,11 @@ def financeiro_projecao(cliente: str, meses: int = 12, hoje: str | None = None) 
         bucket = por_mes_pais.setdefault(chave_mes, {})
         bucket[linha["pais"]] = bucket.get(linha["pais"], 0) + 1
 
-    from inpi.titulares import PROVENIENCIA_CARTEIRA
+    from inpi.titulares import chave_de, resolver
 
     return {
         "cliente": cliente, "de": d_hoje.isoformat(), "ate": d_ate.isoformat(),
-        "proveniencia": PROVENIENCIA_CARTEIRA,
+        "normalizacao": resolver(chave_de(cliente)),
         "total_anuidades_com_data": q["com_data"],
         "por_confianca": q["por_confianca"],
         "por_pais": q["por_pais"],
@@ -90,11 +90,11 @@ def financeiro_janelas_desistencia(cliente: str) -> dict:
             "anuidades_complementacao": est["anuidades_complementacao"],
         })
     candidatos.sort(key=lambda c: c["data_deposito"] or "9999")
-    from inpi.titulares import PROVENIENCIA_CARTEIRA
+    from inpi.titulares import chave_de, resolver
 
     return {
         "cliente": cliente, "casos_no_criterio": total,
-        "proveniencia": PROVENIENCIA_CARTEIRA,
+        "normalizacao": resolver(chave_de(cliente)),
         "candidatos_desistencia": len(candidatos),
         "casos": candidatos,
         "nota": (

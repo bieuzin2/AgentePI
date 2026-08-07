@@ -65,6 +65,7 @@ from inpi.prazos import (
 from inpi.dossie import cliente_dossie
 from inpi.fila import fila_semana
 from inpi.oposicoes import carteira_oposicoes_ep
+from inpi.perfil import inpi_perfil_titular
 from inpi.radar import inpi_radar
 from inpi.saude import carteira_saude
 from inpi.vigencia import carteira_auditoria_vigencia
@@ -86,7 +87,7 @@ TOOLS = [
     # metricas de negocio (Fase 1-5)
     inpi_tempo_fases, inpi_backlog, inpi_pipeline_comparado,
     financeiro_projecao, financeiro_janelas_desistencia,
-    carteira_saude, inpi_radar,
+    carteira_saude, inpi_radar, inpi_perfil_titular,
     # eficiencia interna (Fases E/F do refinamento)
     carteira_auditoria_vigencia, cliente_dossie, fila_semana,
     carteira_oposicoes_ep,

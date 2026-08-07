@@ -19,7 +19,7 @@ from __future__ import annotations
 import duckdb
 
 from inpi import tarefas as tf
-from inpi.carteira import conectar_carteira
+from inpi.carteira_db import conectar_carteira
 from inpi.consulta import _linhas
 from inpi.mcp_app import mcp
 from inpi.mercado import _AVISO_PESSOAL, _chave_escritorio

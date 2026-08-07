@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 import duckdb
 
-from inpi.carteira import BANCO, conectar_carteira
+from inpi.carteira_db import BANCO, conectar_carteira
 
 ESQUEMA = """
 CREATE SEQUENCE IF NOT EXISTS tarefas_id_seq START 1;

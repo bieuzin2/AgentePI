@@ -20,7 +20,7 @@ from inpi.escritorios import normalizar
 from inpi.familia_epo import familia
 from inpi.mcp_app import mcp
 from inpi.prazos import _carregar_lote
-from inpi.titulares import PROVENIENCIA_CARTEIRA
+from inpi.titulares import chave_de, resolver
 
 FONTE = "EPO OPS (INPADOC legal) x base INPI local"
 
@@ -117,7 +117,7 @@ def carteira_auditoria_vigencia(cliente: str, max_casos: int = 20) -> dict:
 
     return {
         "cliente": cliente,
-        "proveniencia": PROVENIENCIA_CARTEIRA,
+        "normalizacao": resolver(chave_de(cliente)),
         "fonte": FONTE,
         "casos_ativos": len(ativos),
         "casos_auditados": len(auditados),

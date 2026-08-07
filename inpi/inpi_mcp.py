@@ -77,6 +77,7 @@ from inpi.financeiro import (  # noqa: F401
 )
 from inpi.saude import carteira_saude  # noqa: F401
 from inpi.radar import inpi_radar  # noqa: F401
+from inpi.perfil import inpi_perfil_titular  # noqa: F401
 from inpi.vigencia import carteira_auditoria_vigencia  # noqa: F401
 from inpi.dossie import cliente_dossie  # noqa: F401
 from inpi.fila import fila_semana  # noqa: F401
@@ -86,180 +87,16 @@ RAIZ = Path(__file__).resolve().parent
 
 
 # ---------------------------------------------------------------------------
-# Tools de carteira (thin wrappers, delegam para inpi.carteira)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool()
-def carteira_ingerir(origem: str, cliente: str, mapa: dict | None = None) -> dict:
-    """Ingere a lista de casos do escritorio: XLSX, CSV ou lista colada no chat.
-
-    USE QUANDO: o operador mandar a carteira de um cliente, em qualquer formato.
-    Passe o caminho do arquivo, ou o proprio texto colado.
-
-    POR QUE ISTO EXISTE: a familia INPADOC NAO ve validacao de patente europeia em
-    BE, FR, GB, GR, IE, IT, LU, NL e SE -- o Acordo de Londres dispensa a traducao,
-    entao nao ha publicacao nacional e nao existe membro de familia. Num caso real,
-    46 de 59 casos eram invisiveis a qualquer busca. A lista do escritorio e a
-    unica fonte que enxerga esses casos.
-
-    A saida sempre diz o que NAO entrou: coluna nao reconhecida e linha recusada
-    voltam nomeadas. Confira 'aviso' antes de tratar a carteira como completa.
-
-    Args:
-        origem: caminho do .xlsx/.csv, ou o texto da lista.
-        cliente: nome pelo qual esta carteira sera consultada depois.
-        mapa: de-para explicito {rotulo_da_coluna: campo}, quando o cabecalho fugir
-            do usual. Campos: jurisdicao, numero_oficial, familia, tipo, data_base,
-            data_deposito, data_concessao, data_prioridade, numero_pct, status, nota.
-    """
-    from inpi import carteira as ct
-
-    return ct.ingerir(origem, cliente=cliente, mapa=mapa)
-
-
-@mcp.tool()
-def carteira_descobrir(cliente: str, titular: str | None = None,
-                       expandir_exterior: bool = True, teto: int = 100,
-                       descobrir_validacoes_ep: bool = True) -> dict:
-    """Levanta a carteira sozinho, pelas tres rotas publicas que existem.
-
-    USE QUANDO: nao houver lista do escritorio, ou para conferir a lista contra o
-    que as fontes publicas conhecem. Complementa `carteira_ingerir`, nao substitui.
-
-    AS TRES ROTAS, e o que cada uma so ela ve:
-      1. base do INPI       -> os casos brasileiros
-      2. familia INPADOC    -> os equivalentes fora da Europa (AU, CA, CN, IN, ZA...)
-      3. status legal INPADOC -> as validacoes europeias, INCLUSIVE nos paises do
-         Acordo de Londres, que a rota 2 nao enxerga porque la a validacao nao gera
-         publicacao nacional. Medido num docketing real: dos 15 estados europeus da
-         lista, esta rota achou os 15, e achou um a mais que a lista nao tinha.
-
-    LIMITES: o INPI casa por NOME de depositante, entao grafia variante e titular
-    estrangeiro escapam (confira com inpi_titular_resolver); e ausencia de evento no
-    status legal pode ser so atraso do escritorio nacional em reportar ao EPO.
-    Ausencia aqui nunca e prova de que o caso nao existe.
-
-    'teto' limita as consultas ao EPO. O free tier e 4 GB por semana e a API nao
-    expoe contador -- confira com epo_quota. O que ficou de fora volta listado.
-    """
-    from inpi import carteira as ct
-
-    r = {"descoberta_inpi": ct.descobrir_inpi(cliente, titular=titular)}
-    if expandir_exterior:
-        r["expansao_exterior"] = ct.expandir_familia(cliente, teto=teto)
-    if descobrir_validacoes_ep:
-        r["validacoes_europeias"] = ct.descobrir_validacoes(cliente)
-    return r
-
-
-@mcp.tool()
-def carteira_listar(cliente: str, jurisdicoes: list[str] | None = None) -> dict:
-    """A carteira consolidada de um cliente, com a divergencia entre fontes a vista.
-
-    USE QUANDO: for responder qualquer coisa sobre "os casos do cliente X".
-
-    Um caso que veio de duas fontes e UM caso, com as duas origens declaradas em
-    'fontes'. Quando as fontes discordam de data, a linha vem com conflito=true e a
-    divergencia detalhada em 'conflitos' -- o valor exibido segue a prioridade
-    lista > INPI > EPO Register > INPADOC, mas a escolha nao apaga a divergencia.
-    Decidir qual data vale e do procurador.
-
-    Confira sempre 'sem_data_base' e 'carteira_vista_em': caso sem data-base fica
-    fora de qualquer projecao de prazo, e carteira antiga envelhece em silencio.
-    """
-    from inpi import carteira as ct
-
-    return ct.listar(cliente, jurisdicoes=jurisdicoes)
-
-
-@mcp.tool()
-def carteira_validacoes_ep(cliente: str, teto: int = 20) -> dict:
-    """Prazo de validacao (art. 65 EPC) e a lacuna do Acordo de Londres, por familia EP.
-
-    USE QUANDO: o cliente tiver patente europeia e a pergunta for "validei onde?" ou
-    "qual o prazo para validar?".
-
-    A mencao de concessao vem do European Patent Register -- e dado oficial, e nao
-    depende de publicacao nacional. Por isso este e o UNICO prazo dos paises de
-    Londres que da para projetar sem a lista do escritorio.
-
-    'estados_de_londres_sem_registro' e a pergunta que so o associado responde: em
-    BE, FR, GB, GR, IE, IT, LU, NL e SE a validacao nao gera publicacao nacional, e
-    nenhuma fonte publica registra que ela ocorreu. Uma linha por familia, nunca uma
-    por estado designado -- o deposito designa ~39 estados de uma vez, e trata-los
-    como carteira inventaria 39 casos por patente.
-
-    O prazo de 3 meses e REGRA NAO REVISADA: ha estados com regime proprio e com
-    traducao parcial. Confirme com o associado.
-    """
-    from inpi import carteira as ct
-
-    return ct.validacoes_ep(cliente, teto=teto)
-
-
-@mcp.tool()
-def carteira_panorama(cliente: str, de: str | None = None, ate: str | None = None,
-                      jurisdicoes: list[str] | None = None,
-                      incluir_validacao_ep: bool = True) -> dict:
-    """TODOS os prazos de um cliente: Brasil e exterior, pais grande e pais pequeno.
-
-    USE QUANDO: a pergunta for "quais os prazos do cliente X". E a porta de entrada:
-    uma chamada devolve anuidade brasileira, anuidade estrangeira e prazo de
-    validacao de EP, ja ordenados por data.
-
-    Depende da carteira estar carregada -- rode antes `carteira_ingerir` (lista do
-    escritorio) e/ou `carteira_descobrir` (base do INPI + familia INPADOC).
-
-    LEIA 'lacunas' SEMPRE, e reproduza na resposta ao operador. Ela diz o que este
-    quadro NAO cobre: casos sem data-base, jurisdicao fora da tabela de regras,
-    jurisdicao com regra nao revisada, divergencia entre fontes, validacao europeia
-    possivelmente invisivel e a idade da carteira. Um quadro sem as lacunas a vista
-    parece completo, e nao e.
-
-    A coluna 'confianca' nao e decorativa: 'calculado' e o art. 84 brasileiro,
-    calibrado contra 285.409 despachos; 'estimado' e regra estrangeira transcrita da
-    legislacao, sem revisao de profissional habilitado. Nunca apresente 'estimado'
-    como prazo confirmado.
-
-    Args:
-        de: inicio da janela (AAAA-MM-DD). Padrao: hoje.
-        ate: fim da janela. Padrao: um ano a frente.
-        incluir_validacao_ep: consulta o European Patent Register. Custa cota do EPO
-            (4 GB/semana, sem contador na API); desligue em consulta exploratoria.
-    """
-    from inpi import carteira as ct
-
-    return ct.panorama(cliente, de=de, ate=ate, jurisdicoes=jurisdicoes,
-                       incluir_validacao_ep=incluir_validacao_ep)
-
-
-@mcp.tool()
-def carteira_jurisdicoes_a_revisar(cliente: str | None = None) -> dict:
-    """Fila de jurisdicoes a assinar, ordenada pelo peso na carteira do cliente.
-
-    USE QUANDO: o operador perguntar por que uma data saiu como 'estimado', ou quiser
-    saber onde investir o esforco de revisao.
-
-    Hoje so o Brasil projeta com rotulo 'calculado' -- a regra do art. 84 foi
-    calibrada contra 285.409 despachos desta base. As demais sao transcricao de
-    legislacao, sem nada nos dados que as confirme.
-
-    Ordenar pela carteira real e o ponto: numa carteira de 59 casos, assinar SO a
-    linha 'EP-nac' converte 30 deles. Cada item traz a regra atual, a base legal e as
-    quatro perguntas que decidem. Assinar = preencher 'revisado_por' e 'revisado_em'
-    em inpi/referencias/anuidades-por-jurisdicao.csv; nao ha codigo a mudar.
-
-    Isto e insumo de revisao, nao revisao: quem assina e profissional habilitado.
-    """
-    from inpi import carteira as ct
-
-    return ct.a_revisar(cliente)
-
-
-# ---------------------------------------------------------------------------
 # Tarefas leves (lembretes internos -- plano 4.7. NAO e docketing, sem calculo
 # de prazo legal; ver inpi/tarefas.py)
+#
+# NOTA (Fase G): as tools de "carteira ingerida" (carteira_ingerir/descobrir/
+# listar/validacoes_ep/panorama/jurisdicoes_a_revisar) foram REMOVIDAS. Elas
+# dependiam de upload manual de portfolio (tabela `casos`), fonte que na pratica
+# so tinha um CSV de teste. Tudo agora roda do titular real: inpi_perfil_titular,
+# carteira_saude, cliente_dossie, carteira_auditoria_vigencia e
+# carteira_oposicoes_ep -- base INPI (BR) + EPO (exterior, inclui Acordo de
+# Londres), sem upload.
 # ---------------------------------------------------------------------------
 
 

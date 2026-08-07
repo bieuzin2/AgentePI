@@ -1,138 +1,173 @@
-"""Saude de portfolio: um score 0-100 por carteira de cliente, para abrir
-reuniao -- plano-v2 Fase 3.
+"""Saude de portfolio: um score 0-100 por titular, para abrir reuniao -- Fase 3,
+reescrito na Fase G para rodar do TITULAR REAL (base INPI), sem depender de
+upload manual de carteira.
 
-E HEURISTICA DE TRIAGEM, nao avaliacao juridica: mistura sinais de qualidade de
-dado (o quanto sabemos sobre a carteira) com sinais de portfolio (vigencia,
-diversidade geografica, idade). Score baixo pode significar carteira fraca OU
-carteira mal cadastrada -- por isso "lacunas" vem sempre junto, nunca so o
-numero.
+E HEURISTICA DE TRIAGEM, nao avaliacao juridica: mistura sinais de portfolio
+(vigencia, idade, diversidade tecnologica) computados so da base INPI local --
+score de titular sem processo BR e erro, nao zero. "lacunas" vem sempre junto,
+nunca so o numero.
 
-Nao chama rede (EPO/BigQuery): usa so o que ja esta na tabela `casos` de
-carteira.duckdb (carteira.listar), que precisa ter sido povoada antes por
-carteira_ingerir/carteira_descobrir/landscape_carteira. Score de carteira vazia
-e erro, nao zero -- zero sugeriria "carteira ruim" quando na verdade e
-"carteira nao cadastrada".
+O SCORE NAO CHAMA REDE: os quatro componentes saem de _carregar_lote (base INPI
+local), rapidos e deterministicos. O bloco 'exterior' (validacao de vigencia no
+exterior via EPO, incluindo o Acordo de Londres) e SEPARADO, opcional e limitado
+por max_casos_exterior -- nunca entra no score nem trava a resposta, e so roda
+automatico para cliente CURADO (Clarke Modet). Assim o numero e sempre estavel
+e a checagem cara de exterior fica isolada.
 
 Componentes (100 pts):
-  vigencia            40  fracao de casos ainda ativos (nao caducado/encerrado)
-  qualidade_dos_dados 30  fracao de casos com data-base e sem conflito entre fontes
-  cobertura_geografica 15  diversidade de jurisdicoes, capada em 8 (teto arbitrario,
-                          documentado -- nao ha "numero certo" de paises)
-  idade_do_portfolio  15  decai linearmente ate 20 anos (vigencia maxima de invencao
-                          no Brasil) a partir da idade media de deposito
+  vigencia                40  fracao de casos ainda ativos (nao encerrados)
+  qualidade_dos_dados     30  fracao com data de deposito conhecida (base de projecao)
+  diversidade_tecnologica 15  subclasses IPC distintas, capada em 8 (substitui a antiga
+                             'cobertura_geografica', que exigia carteira ingerida)
+  idade_do_portfolio      15  decai linearmente ate 20 anos a partir da idade media
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from inpi import carteira as ct
 from inpi.mcp_app import mcp
+from inpi.prazos import _carregar_lote
 
-TETO_JURISDICOES_PARA_PONTUACAO = 8
+TETO_SUBCLASSES_PARA_PONTUACAO = 8
 ANOS_PARA_ZERAR_IDADE = 20
+PAISES_LONDRES = {"BE", "FR", "GB", "GR", "IE", "IT", "LU", "NL", "SE"}
 
 
-def _pontos_vigencia(casos: list[dict]) -> tuple[float, int, int]:
-    ativos = [c for c in casos if (c.get("status") or "").strip().lower()
-              not in ("caducado", "encerrado")]
-    return round(40 * len(ativos) / len(casos), 1), len(ativos), len(casos)
+def _subclasses_ipc(numeros: list[str]) -> int:
+    """Subclasses IPC distintas (4 chars) num conjunto de processos BR."""
+    if not numeros:
+        return 0
+    from inpi.consulta import _linhas
+
+    linhas = _linhas(
+        "SELECT DISTINCT substr(simbolo, 1, 4) sc FROM ipc "
+        "WHERE numero_inpi IN (SELECT unnest(?::VARCHAR[])) "
+        "AND simbolo IS NOT NULL AND length(simbolo) >= 4",
+        [numeros],
+    )
+    return len(linhas)
 
 
-def _pontos_qualidade(casos: list[dict], conflitos: list[dict]) -> tuple[float, list[str]]:
-    com_data_base = [c for c in casos if c.get("data_base")]
-    numeros_em_conflito = {c["numero_norm"] for c in conflitos}
-    sem_conflito = [c for c in casos if c["numero_norm"] not in numeros_em_conflito]
-    fracao = (len(com_data_base) / len(casos) + len(sem_conflito) / len(casos)) / 2
-    problemas = []
-    faltando = len(casos) - len(com_data_base)
+def _score(estados: dict, hoje: date) -> dict:
+    total = len(estados)
+    ativos = [e for e in estados.values() if not e["encerrado_em"]]
+    com_data = [e for e in estados.values() if e.get("data_deposito")]
+
+    p_vig = round(40 * len(ativos) / total, 1)
+    p_qual = round(30 * len(com_data) / total, 1)
+
+    n_sub = _subclasses_ipc(list(estados.keys()))
+    p_div = round(15 * min(n_sub, TETO_SUBCLASSES_PARA_PONTUACAO)
+                  / TETO_SUBCLASSES_PARA_PONTUACAO, 1)
+
+    idades = [(hoje - e["data_deposito"]).days / 365
+              for e in estados.values() if e.get("data_deposito")]
+    idade_media = round(sum(idades) / len(idades), 1) if idades else None
+    p_idade = (round(15 * max(0.0, 1 - (idade_media or 0) / ANOS_PARA_ZERAR_IDADE), 1)
+               if idade_media is not None else 0.0)
+
+    lacunas = []
+    faltando = total - len(com_data)
     if faltando:
-        problemas.append(f"{faltando} caso(s) sem data-base (nao entra em projecao de prazo)")
-    if conflitos:
-        problemas.append(f"{len(conflitos)} conflito(s) de data entre fontes")
-    return round(30 * fracao, 1), problemas
-
-
-def _pontos_cobertura(casos: list[dict]) -> tuple[float, int]:
-    n = len({c["jurisdicao"] for c in casos})
-    return round(15 * min(n, TETO_JURISDICOES_PARA_PONTUACAO) / TETO_JURISDICOES_PARA_PONTUACAO, 1), n
-
-
-def _pontos_idade(casos: list[dict], hoje: date) -> tuple[float, float | None]:
-    idades = [
-        (hoje - c["data_deposito"]).days / 365
-        for c in casos if c.get("data_deposito")
-    ]
-    if not idades:
-        return 0.0, None
-    media = sum(idades) / len(idades)
-    pontos = round(15 * max(0.0, 1 - media / ANOS_PARA_ZERAR_IDADE), 1)
-    return pontos, round(media, 1)
-
-
-@mcp.tool()
-def carteira_saude(cliente: str, hoje: str | None = None) -> dict:
-    """Score 0-100 de saude da carteira de um cliente, com os componentes
-    explicitos e a lista de lacunas que explicam o numero.
-
-    USE QUANDO: precisar de UM numero para abrir reuniao de cliente, sem
-    perder de vista o que sustenta esse numero.
-
-    Requer carteira ja povoada (carteira_ingerir, carteira_descobrir ou
-    landscape_carteira) -- nao consulta rede.
-
-    Args:
-        cliente: nome do cliente na carteira (ver carteira_ingerir/carteira_listar).
-        hoje: 'AAAA-MM-DD' de referencia para idade/vigencia; default a data corrente.
-    """
-    d_hoje = date.fromisoformat(hoje) if hoje else date.today()
-    try:
-        cart = ct.listar(cliente)
-    except RuntimeError as e:
-        return {"erro": True, "mensagem": str(e)}
-    casos = cart["casos"]
-    if not casos:
-        return {
-            "erro": True,
-            "mensagem": (
-                f"Nenhum caso na carteira de {cliente!r}. Score de carteira vazia "
-                "e erro, nao zero -- rode carteira_ingerir ou carteira_descobrir "
-                "antes."
-            ),
-        }
-
-    p_vigencia, ativos, total = _pontos_vigencia(casos)
-    p_qualidade, problemas_qualidade = _pontos_qualidade(casos, cart["conflitos"])
-    p_cobertura, n_jurisdicoes = _pontos_cobertura(casos)
-    p_idade, idade_media = _pontos_idade(casos, d_hoje)
-    score = round(p_vigencia + p_qualidade + p_cobertura + p_idade, 1)
-
-    lacunas = list(problemas_qualidade)
-    if n_jurisdicoes <= 1:
-        lacunas.append("carteira concentrada numa unica jurisdicao")
-    if cart["sem_data_base"]:
-        lacunas.append(f"{len(cart['sem_data_base'])} caso(s) sem data-base nenhuma")
-
-    from inpi.titulares import PROVENIENCIA_CARTEIRA
+        lacunas.append(f"{faltando} caso(s) sem data de deposito (nao entra em projecao)")
+    if n_sub <= 1:
+        lacunas.append("portfolio concentrado numa unica subclasse tecnologica")
+    if len(ativos) < total:
+        lacunas.append(f"{total - len(ativos)} caso(s) ja encerrado(s) (indeferido/arquivado/extinto)")
 
     return {
-        "cliente": cliente, "referencia": d_hoje.isoformat(),
-        "proveniencia": PROVENIENCIA_CARTEIRA,
-        "score": score,
+        "score": round(p_vig + p_qual + p_div + p_idade, 1),
         "componentes": {
-            "vigencia": {"pontos": p_vigencia, "de": 40,
-                        "casos_ativos": ativos, "casos_totais": total},
-            "qualidade_dos_dados": {"pontos": p_qualidade, "de": 30},
-            "cobertura_geografica": {"pontos": p_cobertura, "de": 15,
-                                     "jurisdicoes_distintas": n_jurisdicoes},
+            "vigencia": {"pontos": p_vig, "de": 40,
+                         "casos_ativos": len(ativos), "casos_totais": total},
+            "qualidade_dos_dados": {"pontos": p_qual, "de": 30,
+                                    "casos_com_data_deposito": len(com_data)},
+            "diversidade_tecnologica": {"pontos": p_div, "de": 15,
+                                        "subclasses_ipc_distintas": n_sub},
             "idade_do_portfolio": {"pontos": p_idade, "de": 15,
                                    "idade_media_anos": idade_media},
         },
         "lacunas": lacunas,
+    }
+
+
+def _exterior(cliente: str, max_casos: int) -> dict:
+    """Bloco exterior: reusa carteira_auditoria_vigencia (Fase E/F), que ja faz
+    a checagem via EPO Register/status legal -- inclusive Acordo de Londres. NAO
+    entra no score. So chamado quando pedido/curado. Bounded por max_casos."""
+    from inpi.vigencia import carteira_auditoria_vigencia
+
+    aud = carteira_auditoria_vigencia(cliente, max_casos=max_casos)
+    caducados_londres = sorted({
+        a["pais"] for a in aud.get("alertas_caducidade", [])
+        if a.get("pais") in PAISES_LONDRES
+    })
+    return {
+        "casos_auditados": aud.get("casos_auditados"),
+        "alertas_caducidade": aud.get("alertas_caducidade", []),
+        "caducidade_em_paises_de_londres": caducados_londres,
+        "qualidade_cadastro": aud.get("qualidade_dados", []),
+        "nota": aud.get("aviso"),
+    }
+
+
+@mcp.tool()
+def carteira_saude(cliente: str, hoje: str | None = None,
+                   incluir_exterior: bool | None = None,
+                   max_casos_exterior: int = 15) -> dict:
+    """Score 0-100 de saude do portfolio de um titular, com os componentes
+    explicitos e as lacunas que explicam o numero.
+
+    USE QUANDO: precisar de UM numero para abrir reuniao de cliente, sem perder
+    de vista o que sustenta esse numero.
+
+    O score sai so da base INPI local (rapido, sem rede). O bloco 'exterior'
+    (vigencia no exterior via EPO, inclui Acordo de Londres) e separado e NAO
+    entra no score. Roda automatico so para cliente curado (Clarke Modet);
+    passe incluir_exterior=True para forcar em qualquer titular.
+
+    Args:
+        cliente: nome do titular.
+        hoje: 'AAAA-MM-DD' de referencia; default a data corrente.
+        incluir_exterior: None = automatico (so curado); True/False forca.
+        max_casos_exterior: teto de casos consultados no EPO (quota 4GB/semana).
+    """
+    from inpi.titulares import chave_de, resolver
+
+    d_hoje = date.fromisoformat(hoje) if hoje else date.today()
+    chave = chave_de(cliente)
+    norm = resolver(chave)
+
+    estados, _ = _carregar_lote(titular=cliente)
+    if not estados:
+        return {
+            "erro": True,
+            "cliente": cliente,
+            "normalizacao": norm,
+            "mensagem": (f"Nenhum processo BR para {cliente!r} na base INPI. Score "
+                         "de titular sem processo e erro, nao zero -- confira a grafia."),
+        }
+
+    corpo = _score(estados, d_hoje)
+
+    rodar_ext = norm["nivel"] == "curada" if incluir_exterior is None else incluir_exterior
+    exterior = _exterior(cliente, max_casos_exterior) if rodar_ext else {
+        "nota": ("nao consultado -- exterior so roda automatico para cliente curado; "
+                 "passe incluir_exterior=True para forcar.")
+    }
+
+    return {
+        "cliente": cliente,
+        "referencia": d_hoje.isoformat(),
+        "normalizacao": norm,
+        "score": corpo["score"],
+        "componentes": corpo["componentes"],
+        "lacunas": corpo["lacunas"],
+        "exterior": exterior,
         "aviso": (
-            "HEURISTICA DE TRIAGEM, nao avaliacao juridica de portfolio. Mistura "
-            "qualidade do cadastro com sinais de carteira -- score baixo por "
-            "'qualidade_dos_dados' significa carteira mal cadastrada, nao "
-            "carteira fraca. Leia 'lacunas' antes de citar o numero para o cliente."
+            "HEURISTICA DE TRIAGEM, nao avaliacao juridica. O score sai so da base "
+            "BR local; 'exterior' e checagem EPO separada e limitada, nao entra no "
+            "numero. Leia 'lacunas' antes de citar o score para o cliente."
         ),
     }

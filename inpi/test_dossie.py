@@ -37,17 +37,47 @@ def test_estatisticas_processos():
     assert r["ativos"] == 3
 
 
-def test_dossie_secao_com_erro_nao_derruba():
+def _patch_titular(nivel="curada"):
+    return patch.multiple(
+        "inpi.titulares",
+        chave_de=lambda nome: "CHAVE",
+        resolver=lambda chave: {"nivel": nivel, "chave": chave},
+    )
+
+
+def test_sem_secoes_devolve_so_o_menu():
+    # menu nao pode rodar nenhuma query pesada
+    with patch.object(dz, "_carregar_lote") as carregar, _patch_titular():
+        r = dz.cliente_dossie("Cliente X")
+    carregar.assert_not_called()
+    assert r["menu"] is True
+    assert set(r["secoes_disponiveis"]) == {
+        "processos_e_anuidades", "saude", "exterior_epo"}
+    assert r["normalizacao"]["nivel"] == "curada"
+
+
+def test_secao_com_erro_nao_derruba_as_outras():
     import inpi.financeiro as fin
-    import inpi.saude as sau
 
     with patch.object(dz, "_carregar_lote", side_effect=RuntimeError("banco fora")), \
-         patch.object(sau, "carteira_saude", return_value={"score": 80}), \
-         patch.object(fin, "financeiro_projecao", return_value={"total_anuidades_com_data": 3}), \
-         patch.object(dz, "_geografia", return_value={"por_jurisdicao": {"BR": 2}}):
-        r = dz.cliente_dossie("Cliente X")
-    assert "banco fora" in r["processos"]["erro"]
-    assert r["proveniencia"]["nivel"] == "curada"
-    assert r["saude"] == {"score": 80}
-    assert r["anuidades"] == {"total_anuidades_com_data": 3}
-    assert r["geografia"] == {"por_jurisdicao": {"BR": 2}}
+         patch.object(fin, "financeiro_projecao",
+                      return_value={"total_anuidades_com_data": 3}), \
+         _patch_titular():
+        r = dz.cliente_dossie("Cliente X", secoes=["processos_e_anuidades"])
+    secao = r["resultado"]["processos_e_anuidades"]
+    assert "banco fora" in secao["processos"]["erro"]
+    assert secao["anuidades"] == {"total_anuidades_com_data": 3}
+    assert r["secoes_rodadas"] == ["processos_e_anuidades"]
+
+
+def test_secao_invalida_e_erro():
+    with _patch_titular():
+        r = dz.cliente_dossie("Cliente X", secoes=["inventada"])
+    assert r["erro"] is True and "inventada" in r["mensagem"]
+
+
+def test_so_roda_secoes_pedidas():
+    with patch.object(dz, "_rodar_secao", return_value={"ok": 1}) as run, _patch_titular():
+        r = dz.cliente_dossie("Cliente X", secoes=["saude"])
+    run.assert_called_once()
+    assert list(r["resultado"]) == ["saude"]

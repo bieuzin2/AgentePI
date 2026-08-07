@@ -236,21 +236,32 @@ nem SLA do INPI. Cada tool documenta a própria ressalva no `aviso`/`nota` do re
 
 ---
 
-## Eficiência interna e curadoria (Fases A/E/F do refinamento, 2026-08-07)
+## Eficiência interna e curadoria (Fases A/E/F/G do refinamento, 2026-08-07)
 
 | Pergunta | Status |
 | :--- | :--- |
 | Este titular é cliente curado Clarke Modet ou agrupamento automático? | ✅ `inpi_titular_resolver` — bloco `normalizacao` (curada/automatica) + `possiveis_relacionados` (nunca somados); curadoria em `inpi/referencias/clientes-clarke.csv`, top-20 descoberto por `scripts/descobrir_clientes.py` |
+| Qual o perfil/portfólio de um titular (cliente OU concorrente)? | ✅ `inpi_perfil_titular` — evolução de depósitos por ano, foco tecnológico (subclasses IPC), escritórios que o representam (inclusive nos últimos 3 anos); `total` sempre com a distribuição por ano que o sustenta e a reconciliação `sem_data_de_deposito`; acima de 200 processos, cruza com Google Patents/BigQuery como 2ª fonte (aviso explícito de aproximação por grafia) |
+| Qual a saúde do portfólio de um cliente? | ✅ `carteira_saude` — score 0-100 só da base INPI (vigência 40 + qualidade dos dados 30 + diversidade tecnológica 15 + idade 15); bloco `exterior` (EPO, inclui Acordo de Londres) é separado e não entra no score, roda automático só para cliente curado |
 | Onde a família do meu caso CADUCOU no exterior segundo o INPADOC? | ✅ `carteira_auditoria_vigencia` — cruza projeção local com PG25/PGFP por país (via membro EP); membros sem EP saem como `nao_auditados` |
 | O titular no INPI bate com o applicant da família no EPO? | ✅ mesmo retorno acima, campo `qualidade_dados` — flag de cessão não averbada/grafia divergente |
-| Me dá o panorama completo do cliente X numa pergunta | ✅ `cliente_dossie` — processos + taxa de deferimento + tempo até concessão + saúde + anuidades + geografia, cada seção com fonte |
-| O que vence nos próximos 30 dias em TODAS as carteiras? | ✅ `fila_semana` — anuidades BR+exterior + tarefas internas, ordenado por vencimento; `criar_tarefas=True` abre lembretes com dedup |
+| Me dá o panorama completo do cliente X | ✅ `cliente_dossie` SOB DEMANDA — chamada sem `secoes` devolve só o MENU (processos_e_anuidades / saude / exterior_epo); chamada com `secoes=[...]` roda só o pedido, separando o núcleo rápido do exterior lento |
+| O que vence nos próximos 30 dias? | ✅ `fila_semana` — anuidades BR+exterior + tarefas internas dos clientes curados (ou `clientes=[...]` avulso), ordenado por vencimento; `criar_tarefas=True` abre lembretes com dedup |
 | Tem oposição contra os EPs do cliente? Janela do art. 99 ainda aberta? | ✅ `carteira_oposicoes_ep` — situação do Register + janela de 9 meses da menção de concessão |
 
-Quota EPO (4 GB/semana): `carteira_auditoria_vigencia` e `carteira_oposicoes_ep`
-têm `max_casos` (padrão 20) e rodam por cliente sob demanda — nunca varredura da
-base inteira. Proveniência: tools de carteira carregam `proveniencia` (carteira
-ingerida = curada); matching por nome carrega `normalizacao` (curada/automatica).
+Quota EPO (4 GB/semana): as tools que consultam o EPO (`carteira_auditoria_vigencia`,
+`carteira_oposicoes_ep`, e o bloco exterior de `carteira_saude`) têm `max_casos` e
+rodam por titular sob demanda — nunca varredura da base inteira. Proveniência: toda
+tool de titular carrega `normalizacao` = `resolver(chave)` (curada = cliente Clarke
+Modet; automatica = qualquer outro), decidida pelo dado, não pelo agente.
+
+**Fase G — o que saiu:** o sistema de "carteira ingerida" (upload manual de portfólio
+via XLSX/CSV para a tabela `casos`, tools `carteira_ingerir/descobrir/listar/panorama/
+validacoes_ep/jurisdicoes_a_revisar`) foi **removido**. Dependia de alguém subir
+planilha e na prática só tinha um CSV de teste. Tudo agora roda do titular real:
+base INPI (BR) + EPO (exterior, inclui Acordo de Londres via Register/status legal),
+sem upload. A auditoria histórica já provava que o EPO cobre o Acordo de Londres sem
+precisar de lista do escritório.
 
 ---
 

@@ -56,7 +56,3 @@ def test_relacionados_prefixo_curto_vazio(clientes_csv):
     # 'CNPJ:' vira prefixo '33000167' -- sem outro cliente com essa raiz, vazio
     assert tit.relacionados("CNPJ:33000167") == []
     assert tit.relacionados(None) == []
-
-
-def test_proveniencia_carteira_e_curada():
-    assert tit.PROVENIENCIA_CARTEIRA["nivel"] == "curada"
