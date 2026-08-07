@@ -76,6 +76,7 @@ from inpi.financeiro import (  # noqa: F401
     financeiro_janelas_desistencia,
 )
 from inpi.saude import carteira_saude  # noqa: F401
+from inpi.radar import inpi_radar  # noqa: F401
 
 RAIZ = Path(__file__).resolve().parent
 

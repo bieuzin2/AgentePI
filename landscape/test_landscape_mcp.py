@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from landscape import landscape_mcp
+from landscape import landscape_mcp, mcp_app
 
 
 def test_evolucao_temporal_usa_cache_quando_disponivel():
-    with patch.object(landscape_mcp.cache, "obter", return_value={"linhas": [1]}) as obter, \
-         patch.object(landscape_mcp, "cliente") as cliente_mock:
+    with patch.object(mcp_app.cache, "obter", return_value={"linhas": [1]}) as obter, \
+         patch.object(mcp_app, "cliente") as cliente_mock:
         resultado = landscape_mcp.landscape_evolucao_temporal("H01L")
         assert resultado["cache"] is True
         cliente_mock.assert_not_called()
@@ -18,9 +18,9 @@ def test_evolucao_temporal_usa_cache_quando_disponivel():
 
 
 def test_top_titulares_bate_no_bigquery_e_salva_cache_quando_vazio():
-    with patch.object(landscape_mcp.cache, "obter", return_value=None), \
-         patch.object(landscape_mcp.cache, "salvar") as salvar, \
-         patch.object(landscape_mcp, "cliente"), \
+    with patch.object(mcp_app.cache, "obter", return_value=None), \
+         patch.object(mcp_app.cache, "salvar") as salvar, \
+         patch.object(mcp_app, "cliente"), \
          patch.object(landscape_mcp.consultas, "top_titulares",
                        return_value={"fonte": "x", "linhas": []}) as consulta:
         resultado = landscape_mcp.landscape_top_titulares("H01L", limite=5)

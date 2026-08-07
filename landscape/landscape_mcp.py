@@ -11,31 +11,8 @@ toda tool aqui levanta RuntimeError com instrucao clara, nunca falha em silencio
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
-
-from landscape import cache, consultas
-from landscape.bigquery_client import TETO_BYTES_PADRAO, cliente
-
-mcp = FastMCP("landscape")
-
-
-def _rodar(nome: str, fn, args: dict, *, teto_bytes: int = TETO_BYTES_PADRAO,
-           confirmar_acima_10gb: bool = False) -> dict:
-    """Cache-first: le do DuckDB (30 dias) antes de bater no BigQuery.
-
-    teto_bytes/confirmar_acima_10gb controlam o teto de 10GB do BigQuery e
-    ficam FORA da chave de cache -- so afetam se a consulta roda, nao o que
-    ela retorna, entao nao devem gerar entradas de cache diferentes.
-    """
-    cacheado = cache.obter(nome, args)
-    if cacheado is not None:
-        cacheado["cache"] = True
-        return cacheado
-    resultado = fn(cliente(), teto_bytes=teto_bytes,
-                    confirmar_acima_10gb=confirmar_acima_10gb, **args)
-    resultado["cache"] = False
-    cache.salvar(nome, args, resultado)
-    return resultado
+from landscape import consultas
+from landscape.mcp_app import _rodar, mcp
 
 
 @mcp.tool()
@@ -130,6 +107,9 @@ def landscape_perfil_titular(nome_titular: str, desde: str | None = None,
     return _rodar("perfil_titular", consultas.perfil_titular,
                   {"nome_titular": nome_titular, "desde": desde, "ate": ate},
                   confirmar_acima_10gb=confirmar_acima_10gb)
+
+
+from landscape.carteira_bridge import cpcs_da_carteira, landscape_carteira  # noqa: F401,E402
 
 
 if __name__ == "__main__":
