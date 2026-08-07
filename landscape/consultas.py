@@ -91,13 +91,16 @@ def top_titulares(client: bigquery.Client, cpc_prefix: str,
     ]
     filtro_pais = ""
     if pais:
-        filtro_pais = " AND country_code = @pais"
+        # 'country_code' sem qualificador e AMBIGUO aqui: existe no nivel da
+        # publicacao E dentro de cada assignee_harmonized (pais do titular).
+        # Queremos o da publicacao -- pub.country_code.
+        filtro_pais = " AND pub.country_code = @pais"
         parametros.append(bigquery.ScalarQueryParameter("pais", "STRING", pais))
     filtro_datas = _filtro_datas(desde, ate, parametros)
 
     sql = f"""
         SELECT assignee.name AS titular, COUNT(DISTINCT publication_number) AS depositos
-        FROM {_TABELA}, UNNEST(cpc) AS cpc, UNNEST(assignee_harmonized) AS assignee
+        FROM {_TABELA} AS pub, UNNEST(cpc) AS cpc, UNNEST(assignee_harmonized) AS assignee
         WHERE STARTS_WITH(cpc.code, @cpc_prefix){filtro_pais}{filtro_datas}
         GROUP BY titular
         ORDER BY depositos DESC
@@ -164,8 +167,8 @@ def perfil_titular(client: bigquery.Client, nome_titular: str,
         ORDER BY depositos DESC
     """
     sql_geografia = f"""
-        SELECT country_code AS pais, COUNT(DISTINCT publication_number) AS depositos
-        FROM {_TABELA}, UNNEST(assignee_harmonized) AS assignee
+        SELECT pub.country_code AS pais, COUNT(DISTINCT publication_number) AS depositos
+        FROM {_TABELA} AS pub, UNNEST(assignee_harmonized) AS assignee
         WHERE assignee.name = @titular{filtro_datas}
         GROUP BY pais
         ORDER BY depositos DESC
