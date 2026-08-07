@@ -214,6 +214,28 @@ atraso do escritório em reportar.
 
 ---
 
+## Métricas de gestão de portfolio (Fase 1-5, 2026-08-06)
+
+Levantado na auditoria pós-Fase 5: a base tinha os dados mas faltava a lógica de
+negócio para virar munição de gestão de escritório. Todas as tools abaixo já
+existem e têm teste automatizado.
+
+| Pergunta | Status |
+| :--- | :--- |
+| Quanto tempo leva do depósito até sair parecer numa tecnologia? | ✅ `inpi_tempo_fases` — mediana/p25/p75 por transição |
+| Quantos casos estão parados sem decisão, e há quanto tempo? | ✅ `inpi_backlog` |
+| Nosso escritório é mais rápido ou mais lento que a média do INPI? | ✅ `inpi_pipeline_comparado` |
+| Quantas anuidades (BR + exterior) vencem nos próximos N meses? | ✅ `financeiro_projecao` — contagem por mês x país, **sem R$** até o escritório fornecer `custos.yaml` |
+| Quais pedidos em trâmite valem a pena desistir para cortar custo? | ✅ `financeiro_janelas_desistencia` — pedidos não concedidos com anuidade em débito |
+| Dá pra ter UM número de saúde da carteira de um cliente? | ✅ `carteira_saude` — score 0-100 (vigência 40 + qualidade do cadastro 30 + cobertura geográfica 15 + idade do portfólio 15), sempre com `lacunas` explicando o número |
+| Em quais tecnologias a carteira do cliente está concentrada, e quem mais deposita nelas no mundo? | ✅ `cpcs_da_carteira` + `landscape_carteira` — cruza IPC da carteira com BigQuery |
+| Quem são os titulares NOVOS numa tecnologia desde a última verificação (sem reprocessar tudo)? | ✅ `inpi_radar` — marca-d'água por RPI, `criar_tarefas=True` já abre a tarefa |
+
+Aviso comum a todas: são heurísticas/projeções sobre dados históricos, não fatura
+nem SLA do INPI. Cada tool documenta a própria ressalva no `aviso`/`nota` do retorno.
+
+---
+
 ## O que ele nunca vai responder
 
 Não está em base pública nenhuma, e nenhum trabalho de engenharia resolve:
