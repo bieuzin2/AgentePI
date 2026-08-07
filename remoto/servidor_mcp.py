@@ -35,6 +35,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from epo.epo_mcp import (
+    epo_biblio,
+    epo_busca,
+    epo_familia_inpadoc,
+    epo_quota,
+    epo_register,
+    epo_status_legal,
+    epo_texto_integral,
+)
 from inpi.consulta import (
     inpi_busca_ipc,
     inpi_busca_texto,
@@ -78,6 +87,9 @@ TOOLS = [
     landscape_evolucao_temporal, landscape_top_titulares,
     landscape_co_classificacao, landscape_perfil_titular,
     cpcs_da_carteira, landscape_carteira,
+    # EPO OPS (exterior: familias, status legal, texto, register)
+    epo_busca, epo_biblio, epo_familia_inpadoc, epo_texto_integral,
+    epo_register, epo_status_legal, epo_quota,
 ]
 
 
