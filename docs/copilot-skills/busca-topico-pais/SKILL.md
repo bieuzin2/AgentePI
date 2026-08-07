@@ -1,6 +1,7 @@
 ---
-name: Busca de patentes por tópico e país
-description: Use quando a pergunta for sobre um TEMA em palavras (não um código CPC/IPC) num país ou no mundo. Ex.: "quantas patentes de covid foram depositadas no Nepal", "patentes sobre baterias de sódio no mundo", "quantas patentes de energia solar no Japão".
+name: busca-topico-pais
+description: >-
+  Use quando a pergunta for sobre um TEMA em palavras (não um código CPC/IPC) num país ou no mundo. Ex.: "quantas patentes de covid foram depositadas no Nepal", "patentes sobre baterias de sódio no mundo", "quantas patentes de energia solar no Japão".
 ---
 
 # Busca de patentes por tópico e país

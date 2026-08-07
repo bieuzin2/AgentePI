@@ -1,6 +1,7 @@
 ---
-name: Dossiê de cliente
-description: Use quando o usuário pedir um panorama ou dossiê de um cliente. Ex.: "panorama do cliente X", "como está o portfólio do cliente Y", "faz um dossiê da Tecnored".
+name: dossie-cliente
+description: >-
+  Use quando o usuário pedir um panorama ou dossiê de um cliente. Ex.: "panorama do cliente X", "como está o portfólio do cliente Y", "faz um dossiê da Tecnored".
 ---
 
 # Dossiê de cliente

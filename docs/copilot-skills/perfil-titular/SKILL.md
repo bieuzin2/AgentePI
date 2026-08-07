@@ -1,6 +1,7 @@
 ---
-name: Perfil analítico de titular
-description: Use quando a pergunta for sobre o perfil ou portfólio de um titular, seja cliente OU concorrente. Ex.: "qual o portfólio da Huawei no Brasil", "perfil da Braskem", "como evoluíram os depósitos da Petrobras".
+name: perfil-titular
+description: >-
+  Use quando a pergunta for sobre o perfil ou portfólio de um titular, seja cliente OU concorrente. Ex.: "qual o portfólio da Huawei no Brasil", "perfil da Braskem", "como evoluíram os depósitos da Petrobras".
 ---
 
 # Perfil analítico de titular
