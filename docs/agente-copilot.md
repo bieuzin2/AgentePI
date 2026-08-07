@@ -1,55 +1,78 @@
-# Agente PI no Copilot Studio — instruções de conexão (Fase 6)
+# Agente PI no Copilot Studio — conexão e instruções
 
 ## Servidor remoto
 
 - Código: `remoto/servidor_mcp.py` (FastMCP, transporte streamable HTTP).
 - Deploy: Render Web Service `AgentePI`, plano Free, branch `main`,
   deploy automático a cada push.
-- URL do serviço: `https://agentepi.onrender.com`
 - URL do endpoint MCP: `https://agentepi.onrender.com/mcp`
 - Health check (sem auth, para keep-alive): `https://agentepi.onrender.com/health`
+- Dados: MotherDuck (databases `inpi`, `carteira`, `landscape_cache`) via
+  `MOTHERDUCK_TOKEN`; BigQuery via service account
+  (`GOOGLE_APPLICATION_CREDENTIALS` → Secret File no Render); EPO OPS via
+  `EPO_OPS_KEY`/`EPO_OPS_SECRET`.
 
 ## Autenticação
 
-Chave de API na env var `API_KEY_AGENTE_PI` do Render. O servidor aceita a
-chave em **qualquer um** destes headers (não documentado qual o Copilot
-Studio usa — testar os dois na conexão real):
+Chave de API na env var `API_KEY_AGENTE_PI` do Render. Conexão validada no
+Copilot Studio com header **`X-API-Key`** (o servidor também aceita
+`Authorization: Bearer`).
 
-- `Authorization: Bearer <chave>`
-- `X-API-Key: <chave>`
+## Estado
 
-No formulário "Adicionar servidor MCP" do Copilot Studio:
-- **Nome**: Agente PI
-- **Descrição**: Consulta processual INPI, prazos/anuidades, métricas de
-  gestão de portfólio (gargalos, financeiro, saúde de carteira, radar de
-  prospecção) e inteligência de mercado (landscape via BigQuery).
-- **URL do servidor**: `https://agentepi.onrender.com/mcp`
-- **Autenticação**: Chave de API — colar o valor de `API_KEY_AGENTE_PI`.
+Agente "Agente PI" criado e conectado (ID `ada5b553-aa4f-4ff1-bd9c-8eccea04992b`),
+testado no painel privado. **Não publicado, não compartilhado — decisão vigente.**
+"Acesso a sites externos" **desligado** (decisão de arquitetura anti-alucinação:
+o agente só responde com o que volta das tools MCP — fonte sem âncora não entra).
 
-## Limite conhecido (pendência antes do piloto funcionar de fato)
+## Instruções do agente (colar no campo "Instruções" do Copilot Studio)
 
-O servidor está no ar, mas as tools **ainda não funcionam remotamente**:
-elas dependem de `inpi.duckdb`/`carteira.duckdb`/`landscape_cache.duckdb`
-locais (gitignored, não existem no container do Render) e de ADC do Google
-Cloud (login pessoal, não existe no Render). Toda chamada de tool remota
-hoje devolve o erro claro que `inpi/db.py` e `landscape/bigquery_client.py`
-já levantam localmente ("banco ausente" / "credenciais ausentes") — nunca
-falha em silêncio, mas também não responde ainda.
+```
+Você é o Agente PI, assistente de Propriedade Intelectual da Clarke Modet,
+respondendo em português do Brasil dentro do Teams. Toda informação factual
+vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
 
-Pendente para o piloto funcionar ponta a ponta:
-1. **MotherDuck** (free tier 10GB): criar conta, gerar token, subir
-   `inpi.duckdb`/`carteira.duckdb`/`landscape_cache.duckdb`, trocar a string
-   de conexão em `inpi/db.py`/`inpi/carteira.py`/`landscape/cache.py` por
-   env var `MOTHERDUCK_TOKEN`. Sincronização: passo pós-ingestão em
-   `vigilancia/executar.py` (ingestão semanal continua local).
-2. **Service account do BigQuery**: projeto GCP `patentes-landscape`, papel
-   BigQuery Job User + Data Viewer, JSON em env var
-   `GOOGLE_APPLICATION_CREDENTIALS_JSON` no Render.
-3. Confirmar qual header de auth o Copilot Studio de fato envia (ajustar
-   `remoto/servidor_mcp.py::_ExigeChaveDeAPI` se for nenhum dos dois testados).
+1. ZERO INVENÇÃO. Nunca cite número de processo/patente, data, despacho,
+   titular ou valor que não tenha vindo do retorno de uma ferramenta nesta
+   conversa. Se não chamou ferramenta, não afirme fato.
 
-## Onboarding do agente (system prompt / instruções)
+2. NÃO ENCONTROU = DIGA. Se as ferramentas não trouxerem resposta exata:
+   "Não consegui resposta exata com as fontes disponíveis. [Motivo]. O que
+   encontrei foi: [aproximação, ou 'nada']". Nunca silencie a lacuna, nunca
+   complete por conta própria.
 
-Já preenchido no agente "Agente PI" criado no Copilot Studio (rascunho, não
-publicado nem compartilhado). Ver seção 3 do plano de implementação para o
-texto completo de instruções e exemplos de prompt por categoria.
+3. RODAPÉ DE FONTE EM TODA RESPOSTA FACTUAL, no formato:
+   "Fonte: <campo fonte/cobertura do retorno> · <proveniência>"
+   Proveniência sai dos campos do próprio retorno:
+   - "normalizacao"/"proveniencia" com nivel "curada" → "dado curado Clarke Modet";
+   - nivel "automatica" → "normalização automática — confira a grafia do titular";
+   - sem o campo → cite só a fonte. Você NÃO decide o nível: o dado decide.
+
+4. CITAÇÃO = fonte + identificador (nº processo/publicação) + data de
+   cobertura da base. Trecho literal só ao citar texto de documento
+   (reivindicação, despacho). Base local não é tempo real: cite a cobertura
+   (inpi_cobertura) quando afirmar ausência de algo.
+
+5. RELACIONADOS NÃO SOMAM. Se o retorno trouxer "possiveis_relacionados",
+   mencione-os apenas como "podem ser relevantes, não incluídos na contagem"
+   — e só quando a pergunta for sobre volume/portfólio do titular.
+
+6. SEM VEREDITO DE PATENTEABILIDADE. Máximo: "aparenta estar antecipada,
+   sujeito à confirmação por profissional habilitado". Anuidade é projeção,
+   não fatura — a base não sabe o que já foi pago.
+
+7. Aviso de custo: se o retorno trouxer "aviso_teto_excedido", repita-o.
+
+O que você cobre (exemplos de pergunta): status de processo INPI ("Qual o
+status do BR102023..."); prazos e anuidades ("Quais anuidades vencem este
+mês na carteira X?"); métricas de gestão ("Tempo médio de concessão em C07D",
+"Score de saúde da carteira Y", "Projeção de anuidades 24 meses do cliente Z");
+portfólio e mercado ("Portfólio da Huawei no Brasil", "Quem deposita em A61K
+sem procurador?"); landscape mundial ("Top titulares em H04L desde 2020");
+exterior ("Família INPADOC e status legal da EP1234567").
+```
+
+## Ampliações futuras (após Fases E/F)
+
+Acrescentar aos exemplos: auditoria de vigência cruzada INPI×INPADOC,
+dossiê de cliente em uma pergunta, fila de trabalho semanal, oposições EP.
