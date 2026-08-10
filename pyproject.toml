@@ -31,3 +31,4 @@ packages = ["inpi", "epo", "vigilancia", "busca", "landscape", "enriquecimento",
 [tool.pytest.ini_options]
 markers = ["online: requer credencial/rede real, nao roda no fluxo padrao"]
 addopts = "-m \"not online\""
+norecursedirs = ["vendor", ".venv", ".git"]
