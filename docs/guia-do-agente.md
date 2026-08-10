@@ -29,7 +29,8 @@ granular que este guia, vale ler se a pergunta for específica).
   (`inpi`, `epo`, `uspto`, `busca`, `landscape`). Cada um é um processo Python
   separado que expõe "tools" que o Claude chama durante a conversa.
 - **Camada autônoma**: `vigilancia/executar.py`, roda sem LLM, agendada no
-  Windows Task Scheduler (terça 20h, pós-RPI). Gera `alertas.md`, atualiza o
+  Windows Task Scheduler (domingo 08h, após o refresh de sábado dos dados
+  abertos). Gera `alertas.md`, atualiza o
   dashboard HTML e manda e-mail de resumo (quando `SMTP_USER`/`SMTP_PASS`
   estiverem configurados no `.env`).
 - **Dados**: DuckDB local (`inpi/data/*.duckdb`, `vigilancia/data/*.duckdb`,

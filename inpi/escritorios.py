@@ -1,16 +1,16 @@
 """Normalizacao de nome de escritorio e de titular na base do INPI.
 
-O PROBLEMA, medido: a tabela `procuradores` tem 17.521 grafias distintas para algo
-como 10 mil escritorios reais. A Clarke Modet aparece em 42 grafias -- variacoes de
-caixa, pontuacao, "do Brasil" vs "Propriedade Intelectual", espacos duplos, e ate
+O PROBLEMA, medido: a tabela `procuradores` tem ~17,5 mil grafias distintas para algo
+como 10 mil escritorios reais. A Clarke Modet aparece em dezenas de grafias -- variacoes
+de caixa, pontuacao, "do Brasil" vs "Propriedade Intelectual", espacos duplos, e ate
 espaco no inicio (':CLARKE, MODET...'). Sem agrupar, qualquer estatistica de mercado
 esta errada e a carteira do escritorio sai fragmentada.
 
 DUAS CAMADAS, porque uma nao basta:
 
 1. Normalizacao deterministica (esta funcao): caixa, acento, pontuacao e sufixos
-   societarios/descritivos. Reduz 17.521 -> 10.078 chaves (-42%) e junta as 42
-   grafias da Clarke Modet numa so, com 25.643 processos.
+   societarios/descritivos. Reduz ~17,5 mil -> ~10 mil chaves (-42%) e junta as
+   dezenas de grafias que referenciam a firma numa so chave.
 
 2. Apelidos revisados (referencias/escritorios-apelidos.csv): erro de digitacao nao
    tem regra. 'CLARK MODET', 'CLAKE MODET', 'CLARCKE MODET', 'CLARKE MODETO',
@@ -20,6 +20,16 @@ DUAS CAMADAS, porque uma nao basta:
    familias distintas (ha varios 'LEONARDOS' que sao bancas separadas). Entao a
    ponte e uma tabela revisada por humano, no mesmo espirito da tabela de codigos
    de despacho.
+
+   ESSA MESMA TABELA carrega tambem AFILIACOES deliberadas, nao so typos: um agente
+   pessoa fisica cujos casos contam para a banca (ex.: 'ORLANDO DE SOUZA' e 'FLAVIA
+   SALIM LOPES' -> 'CLARKE MODET', coluna 'observacao' = "agente da casa - confirmado
+   pelo usuario"). Por isso a carteira Clarke soma ~44,7 mil processos e nao so as
+   ~25,8 mil grafias que trazem a palavra "clarke": ~18,9 mil vem desses agentes.
+   Isso e curadoria endossada, NAO erro -- nao remova as duas linhas achando que sao
+   ruido. A composicao (firma vs agente afiliado) e exposta por `apelidos_com_motivo`
+   e pelos campos `composicao` de inpi_escritorio_resolver/inpi_carteira, para o
+   numero nunca chegar opaco ao agente.
 """
 
 from __future__ import annotations
@@ -66,6 +76,26 @@ def _apelidos() -> dict[str, str]:
                     if v and c:
                         _cache_apelidos[v] = c
     return _cache_apelidos
+
+
+def apelidos_com_motivo() -> dict[str, dict]:
+    """Como _apelidos, mas carrega tambem a 'observacao' de cada mapeamento -- a
+    proveniencia da curadoria. E o que distingue um erro de digitacao ('CLAKE MODET')
+    de uma AFILIACAO deliberada (um agente pessoa fisica cujos casos contam para a
+    banca, ex.: 'ORLANDO DE SOUZA' -> 'CLARKE MODET', observacao 'agente da casa').
+    Sem isto, a carteira devolve um numero que o agente nao consegue explicar."""
+    saida: dict[str, dict] = {}
+    if APELIDOS.exists():
+        with APELIDOS.open(encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                v = (r.get("variante") or "").strip().upper()
+                if not v:
+                    continue
+                saida[v] = {
+                    "canonico": (r.get("canonico") or "").strip().upper(),
+                    "observacao": (r.get("observacao") or "").strip(),
+                }
+    return saida
 
 
 def normalizar(nome: str | None) -> str:

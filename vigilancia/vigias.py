@@ -169,7 +169,7 @@ def vigia_exterior(numeros: list[str], estado_anterior: dict | None = None) -> t
 
     Compara o status legal por pais de cada familia contra o `estado_anterior`
     (mapa referencia -> {pais: status resumido}). So roda quando executar.py
-    decide que e a primeira terca do mes.
+    decide que e a primeira execucao do mes.
     """
     if not numeros:
         return [], {}

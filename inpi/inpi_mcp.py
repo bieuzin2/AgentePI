@@ -6,7 +6,7 @@ busca em texto de patente BR e o acompanhamento processual, offline e sem
 depender da rede do INPI -- que, alias, esta inalcancavel desta maquina
 (revistas.inpi.gov.br derruba o handshake TLS; ver inpi/referencias/fontes-rpi.md).
 
-Fonte: https://dadosabertos.inpi.gov.br/index/patentes/ (CSV, atualizado diariamente).
+Fonte: https://dadosabertos.inpi.gov.br/index/patentes/ (CSV, atualizado semanalmente, aos sabados).
 Carregue com:  python inpi/ingest.py
 
 Este arquivo so registra as tools MCP e importa a logica dos modulos abaixo
@@ -58,6 +58,7 @@ from inpi.mercado import (  # noqa: F401
     _chave_escritorio,
     inpi_escritorio_resolver,
     inpi_carteira,
+    inpi_exigencias_escritorio,
     inpi_mercado,
     inpi_prospeccao,
     inpi_serie_mercado,
@@ -171,8 +172,9 @@ def inpi_alertas(apenas_nao_vistos: bool = True, severidade: str | None = None,
     """Le os alertas gerados pela vigilancia autonoma (vigilancia/executar.py).
 
     USE QUANDO: o operador perguntar "o que mudou desde a ultima vez" ou "tem
-    alerta pendente". Os alertas vem da execucao agendada semanal (terca 20h,
-    pos-RPI) -- watchlist de carteira, concorrentes, IPC, anuidades e (mensal)
+    alerta pendente". Os alertas vem da execucao agendada semanal (domingo 08h,
+    pos-refresh de sabado dos dados abertos) -- watchlist de carteira,
+    concorrentes, IPC, anuidades e (mensal)
     status legal no exterior. Ver vigilancia/vigias.py.
 
     Passe 'marcar_vistos' com os ids retornados para dar baixa -- proxima

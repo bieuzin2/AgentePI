@@ -21,6 +21,40 @@ from epo.mcp_app import mcp
 AMOSTRA_MAXIMA = 500  # teto de itens por chamada com constituent=biblio (custa mais que so referencia)
 
 
+# Jurisdicoes que o DOCDB indexa mal ou nao indexa: um zero aqui e quase sempre
+# falta de cobertura da fonte, nao ausencia real de patente. Lista ilustrativa,
+# nao exaustiva -- Golfo, boa parte da Africa, Asia Central e Oceania menor.
+_COBERTURA_FRACA = frozenset(
+    "OM GC AE SA QA KW BH YE JO LB SY IQ IR NP BD LK MM KH LA "
+    "BN MN AF PK AO MZ AGO ET KE TZ UG GH CI SN CM ZW BO PY".split()
+)
+
+
+def _nota_zero(pais: str | None) -> str:
+    """Enquadra o resultado vazio conforme a limitacao provavel da fonte, para o
+    agente NAO concluir ausencia quando o que houve foi lacuna do DOCDB."""
+    if pais and pais.strip().upper() in _COBERTURA_FRACA:
+        return (
+            f"Zero documentos para pais={pais.strip().upper()}, mas o DOCDB/INPADOC "
+            "indexa MAL essa jurisdicao -- isto e lacuna de cobertura da fonte, NAO "
+            "prova de que nao existe patente la. Para confirmar, e preciso a base "
+            "nacional do proprio pais (nao coberta aqui)."
+        )
+    if pais:
+        return (
+            f"Nenhum documento casou com esses termos em pais={pais.strip().upper()}. "
+            "Duas causas comuns antes de concluir ausencia: (1) o resumo/titulo do "
+            "documento nacional pode nao estar em ingles no DOCDB (tipico de BR e de "
+            "publicacoes nacionais nao-EN) -- a busca 'ta=' e por texto EN; tente por "
+            "IPC/CPC, que independe de idioma; (2) confira o termo em ingles."
+        )
+    return (
+        "Nenhum documento casou com esses termos. Resultado vazio e valido -- "
+        "confira se o termo em ingles esta certo, ou tente por classificacao IPC/CPC, "
+        "que independe de vocabulario, antes de concluir ausencia."
+    )
+
+
 def _monta_cql(termos_ingles: str, pais: str | None, desde: str | None, ate: str | None) -> str:
     clausulas = [f"ta=({termos_ingles.strip()})"]
     if pais:
@@ -144,11 +178,7 @@ def epo_panorama_topico(termos_ingles: str, pais: str | None = None,
                 "distribuicao_por_pais": [], "distribuicao_por_ano": [],
                 "titulares_distintos": 0,
                 "fonte": "EPO OPS (DOCDB), 100+ jurisdicoes",
-                "nota": (
-                    "Nenhum documento casou com esses termos/pais. Resultado "
-                    "vazio e valido -- confira se o termo em ingles esta "
-                    "certo antes de concluir ausencia."
-                ),
+                "nota": _nota_zero(pais),
             }
         raise
     _loga_quota("panorama_topico", resp)

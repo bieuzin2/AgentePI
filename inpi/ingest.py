@@ -1,6 +1,6 @@
 """Carrega os CSVs de dados abertos do INPI num DuckDB local.
 
-Fonte: https://dadosabertos.inpi.gov.br/index/patentes/ (atualizado diariamente).
+Fonte: https://dadosabertos.inpi.gov.br/index/patentes/ (atualizado semanalmente, aos sabados).
 
     python inpi/ingest.py            # carrega o que ja esta em inpi/data/raw/
     python inpi/ingest.py --baixar   # baixa os CSVs antes de carregar

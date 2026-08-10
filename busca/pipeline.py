@@ -51,7 +51,10 @@ def _fonte_epo(conceitos: list[str], ipc: list[str] | None, limite: int) -> list
         cql = f"({cql}) and ({' or '.join(f'ipc={i}' for i in ipc)})"
     busca = epo_busca(cql, inicio=1, fim=limite)
     if busca.get("erro"):
-        return []
+        # NAO engolir: devolver [] aqui fazia a perna EPO aparecer como
+        # 'executou: true, hits: 0' -- indistinguivel de "buscou e nao achou". Levantar
+        # para o orquestrador registrar 'executou: false, erro: <motivo>' na cobertura.
+        raise RuntimeError(f"EPO recusou a busca: {busca.get('mensagem') or busca}")
     saida = []
     for ref in busca.get("resultados", []):
         bib = epo_biblio(ref)
@@ -184,6 +187,15 @@ def busca_anterioridade(conceitos: list[str], ipc: list[str] | None = None,
             else:
                 brutos.extend(resultado)
 
+    # Normaliza datas a ISO-string LOGO na coleta: as fontes reais (INPI via DuckDB,
+    # EPO) devolvem objetos date, e todo o resto (dedup ordena por data, ordenacao
+    # final, comparacao com data_critica) mistura isso com strings '9999'/'AAAA-MM-DD'
+    # -> 'date < str' TypeError. Coagir aqui, num lugar so, conserta todos os pontos.
+    for item in brutos + npl:
+        for campo in ("data_publicacao", "data_deposito"):
+            if item.get(campo) is not None:
+                item[campo] = str(item[campo])[:10]
+
     cobertura["ppubs"] = {
         "executou": False,
         "motivo": ("Fora de escopo desta fase: sem cliente Python direto reusavel "
@@ -195,12 +207,20 @@ def busca_anterioridade(conceitos: list[str], ipc: list[str] | None = None,
     deduplicado = _deduplicar_por_familia(brutos)
 
     if data_critica:
+        # A data de um resultado pode voltar como date/datetime (EPO/INPI reais) ou
+        # string; data_critica e string 'AAAA-MM-DD'. Comparar date < str levanta
+        # TypeError -- o teste nao pegava porque mockava tudo como string. Coage os dois
+        # lados a ISO-string (comparacao lexicografica de datas ISO e correta).
+        alvo = str(data_critica)[:10]
+
+        def _anterior(data):
+            return (str(data)[:10] < alvo) if data else None
+
         for item in deduplicado:
-            data = item.get("data_publicacao") or item.get("data_deposito")
-            item["anterior_a_data_critica"] = (data < data_critica) if data else None
+            item["anterior_a_data_critica"] = _anterior(
+                item.get("data_publicacao") or item.get("data_deposito"))
         for item in npl:
-            data = item.get("data_publicacao")
-            item["anterior_a_data_critica"] = (data < data_critica) if data else None
+            item["anterior_a_data_critica"] = _anterior(item.get("data_publicacao"))
 
     deduplicado.sort(key=lambda i: (
         -len(i["conceitos_encontrados"]),

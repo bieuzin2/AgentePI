@@ -143,6 +143,18 @@ def test_entrada_com_kind_vira_docdb(ref):
     assert e.as_api_input() == "(BR).(102022010731).(A2)"
 
 
+@pytest.mark.parametrize(
+    "ref,numero,kind",
+    [("BR-PI0803071-A2", "PI0803071", "A2"), ("BR-MU8802345-U2", "MU8802345", "U2")],
+)
+def test_entrada_aceita_br_antigo_com_prefixo_de_letra(ref, numero, kind):
+    """Regressao: BR pre-2012 tem prefixo de letra (PI/MU/C1...). Sem aceitar,
+    o vigia de exterior quebrava em toda carteira com caso antigo."""
+    e = m._entrada(ref)
+    assert isinstance(e, m.epo_ops.models.Docdb)
+    assert (e.country_code, e.number, e.kind_code) == ("BR", numero, kind)
+
+
 def test_entrada_sem_kind_vira_epodoc_sem_kind():
     e = m._entrada("BR102022010731")
     assert isinstance(e, m.epo_ops.models.Epodoc)

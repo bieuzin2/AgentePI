@@ -4,10 +4,11 @@
     python -m vigilancia.executar --dry-run       # roda tudo, NAO envia e-mail
     python -m vigilancia.executar --sem-reingestao --dry-run   # usa a base como esta
 
-Agendado via scripts/instalar_agendamento.ps1: terca as 20h (pos-RPI), semanal.
-O vigia 5 (exterior) poupa quota EPO rodando so na primeira terca do mes -- a
-logica de "primeira terca" fica aqui, e nao em duas tarefas agendadas, porque e
-mais simples de manter e de conferir (basta olhar alertas.md).
+Agendado via scripts/instalar_agendamento.ps1: DOMINGO as 08h, semanal. Roda depois
+do refresh dos dados abertos (que sai aos SABADOS) -- rodar antes disso reprocessaria
+o mesmo CSV. O vigia 5 (exterior) poupa quota EPO rodando so na primeira execucao do
+mes -- a logica de "primeira execucao" fica aqui, e nao em duas tarefas agendadas,
+porque e mais simples de manter e de conferir (basta olhar alertas.md).
 """
 
 from __future__ import annotations
@@ -63,10 +64,13 @@ def _proximo_id(con: duckdb.DuckDBPyConnection) -> int:
     return (r or 0) + 1
 
 
-def primeira_terca_do_mes(ref: date | None = None) -> bool:
-    """True se `ref` cai na primeira terca-feira do mes (weekday()==1, dia<=7)."""
-    ref = ref or date.today()
-    return ref.weekday() == 1 and ref.day <= 7
+def primeira_execucao_do_mes(ref: date | None = None) -> bool:
+    """True se `ref` cai nos 7 primeiros dias do mes -- ou seja, e a primeira
+    execucao semanal do mes, seja qual for o dia agendado (a tarefa roda uma vez
+    por semana num unico dia, entao dia<=7 identifica a primeira ocorrencia). E
+    nessa unica execucao mensal que o vigia 5 (exterior/EPO) roda, para poupar
+    quota."""
+    return (ref or date.today()).day <= 7
 
 
 def gravar_alertas(alertas: list[dict]) -> int:
@@ -143,7 +147,7 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
     alertas += novos_anu
     _grava_json(ESTADO_ANUIDADES, estado_anu_novo)
 
-    if primeira_terca_do_mes(ref):
+    if primeira_execucao_do_mes(ref):
         estado_ext = _carrega_json(ESTADO_EXTERIOR)
         novos_ext, estado_ext_novo = vigias.vigia_exterior(numeros, estado_ext)
         alertas += novos_ext
@@ -180,7 +184,7 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
         "gravados": gravados,
         "alertas_md": str(md),
         "dashboard": dashboard,
-        "vigia_exterior_rodou": primeira_terca_do_mes(ref),
+        "vigia_exterior_rodou": primeira_execucao_do_mes(ref),
         "email": resultado_email,
         "dry_run": dry_run,
     }

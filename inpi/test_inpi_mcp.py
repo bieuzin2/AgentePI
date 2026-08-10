@@ -125,6 +125,42 @@ def test_busca_texto_recusa_campo_invalido():
 
 
 @precisa_banco
+def test_exigencias_escritorio_lidera_com_a_ressalva():
+    """Q1: 'exigencias cumpridas' nao existe nos dados abertos (e peticao). A tool
+    tem de devolver o que da para medir (emitidas + arquivadas por nao cumprimento) e
+    SEMPRE o aviso de que cumprimento e peticao, nunca um numero de cumpridas."""
+    r = m.inpi_exigencias_escritorio("Clarke Modet", 2026)
+    assert r["chave"] == "CLARKE MODET"
+    assert r["exigencias_emitidas"]["total"] >= 0
+    assert "11.2" == r["arquivadas_por_nao_cumprimento"]["codigo"]
+    # o proxy nunca pode ser negativo e a ressalva tem de estar presente
+    assert r["proxy_cumpridas"] >= 0
+    assert "peticao" in r["aviso"].lower() and "206/207" in r["aviso"]
+
+
+def test_composicao_separa_firma_de_agente_afiliado(monkeypatch):
+    """A carteira nunca deve chegar opaca: firma (nome da banca) e agente afiliado
+    (pessoa fisica dobrada por curadoria) tem de sair separados, com proveniencia."""
+    from inpi import mercado, escritorios
+
+    monkeypatch.setattr(
+        escritorios, "apelidos_com_motivo",
+        lambda: {"ORLANDO DE SOUZA": {"canonico": "CLARKE MODET",
+                                      "observacao": "agente da casa"}},
+    )
+    grafias = [
+        {"original": "CLARKE MODET DO BRASIL LTDA", "n": 100},
+        {"original": "CLARK MODET", "n": 5},          # typo da firma, sem motivo -> firma
+        {"original": "Orlando de Souza", "n": 30},    # agente afiliado, com motivo
+    ]
+    c = mercado._composicao("CLARKE MODET", grafias)
+    assert c["firma_processos"] == 105            # 100 + 5 (typo conta como firma)
+    assert c["agentes_afiliados_processos"] == 30
+    assert c["agentes_afiliados"][0]["procurador"] == "ORLANDO DE SOUZA"
+    assert c["agentes_afiliados"][0]["motivo"] == "agente da casa"
+
+
+@precisa_banco
 def test_busca_ipc_por_prefixo():
     d = m.inpi_busca_ipc("B65D 65/46", limite=5)
     assert d["retornados"] > 0

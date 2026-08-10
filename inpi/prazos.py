@@ -380,8 +380,15 @@ def inpi_prazos_carteira(
                                x["prazo"] or "9999", x["numero_inpi"]))
     truncado = len(prazos) > limite_resultados
     por_tipo: dict[str, int] = {}
+    # Quebra das anuidades por SITUACAO: sem isto, "897 anuidades em set/2026" se le
+    # como tranquilo mesmo quando quase todas ja passaram do periodo ordinario e so
+    # dao para pagar com retribuicao adicional. A situacao vem de anuidades.projetar.
+    anuidades_por_situacao: dict[str, int] = {}
     for p in prazos:
         por_tipo[p["tipo"]] = por_tipo.get(p["tipo"], 0) + 1
+        if p["tipo"] == "anuidade":
+            s = p.get("status") or "?"
+            anuidades_por_situacao[s] = anuidades_por_situacao.get(s, 0) + 1
 
     return {
         "criterio": {
@@ -393,6 +400,9 @@ def inpi_prazos_carteira(
         "resumo": {
             "prazos_encontrados": len(prazos),
             "por_tipo": por_tipo,
+            # 'prazo_complementar_corrente' = periodo ordinario ja encerrado, so paga com
+            # retribuicao adicional. 'periodo_ordinario_corrente' = ainda sem multa.
+            "anuidades_por_situacao": anuidades_por_situacao,
             "casos_encerrados": encerrados,
             "casos_sem_data_de_deposito": sem_base,
         },

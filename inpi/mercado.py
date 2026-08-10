@@ -27,13 +27,61 @@ def _chave_escritorio(nome: str) -> str:
     return esc.normalizar(nome)
 
 
+def _sem_acento_upper(s: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().upper()
+    return " ".join(t.split())
+
+
+def _composicao(chave: str, grafias: list[dict]) -> dict:
+    """Decompoe a carteira de um escritorio em 'firma' (grafias que trazem o nome da
+    banca) e 'agentes_afiliados' (nome pessoal de procurador dobrado na chave por
+    curadoria endossada -- ex.: 'Orlando de Souza' -> Clarke). EXISTE para o total
+    nunca chegar opaco ao agente: sem isto ele reporta '44.708 casos' e nao consegue
+    dizer que ~18,9 mil vem de dois agentes da casa. `grafias` = [{original, n}]."""
+    token = chave.split()[0] if chave else ""
+    motivos = esc.apelidos_com_motivo()
+    firma_n = 0
+    afiliados: dict[str, dict] = {}
+    for g in grafias:
+        orig_norm = _sem_acento_upper(g["original"])
+        n = g["n"]
+        motivo = motivos.get(orig_norm, {}).get("observacao", "")
+        # Afiliado = grafia SEM o nome da firma E com motivo explicito de afiliacao
+        # (ex.: 'agente da casa'). Sem motivo, uma grafia sem o token e so um typo do
+        # nome da firma ('CLARK MODET', sem o 'E') -- conta como firma, nao como agente.
+        if (token and token in orig_norm) or not motivo:
+            firma_n += n
+        else:
+            slot = afiliados.setdefault(
+                orig_norm,
+                {"procurador": orig_norm, "processos": 0, "motivo": motivo},
+            )
+            slot["processos"] += n
+    afiliados_ord = sorted(afiliados.values(), key=lambda x: -x["processos"])
+    return {
+        "firma_processos": firma_n,
+        "agentes_afiliados_processos": sum(a["processos"] for a in afiliados_ord),
+        "agentes_afiliados": afiliados_ord,
+        "nota": (
+            "Total = firma + agentes_afiliados. 'agentes_afiliados' sao procuradores "
+            "pessoa fisica cujos casos foram atribuidos a banca por curadoria revisada "
+            "(coluna 'observacao' do apelidos), NAO erro de agrupamento. Cite a "
+            "composicao ao dar o total."
+        ) if afiliados_ord else "Carteira so de grafias da propria firma, sem agentes afiliados.",
+    }
+
+
 @mcp.tool()
 def inpi_escritorio_resolver(nome: str) -> dict:
     """Mostra em que chave um nome de escritorio cai, e quais grafias ela agrupa.
 
     USE QUANDO: antes de confiar em qualquer numero de carteira ou de mercado. A base
-    tem 17.521 grafias de procurador para ~10 mil escritorios reais -- a Clarke Modet
-    sozinha aparece em 42 formas. Se a chave errada for usada, todo o resto erra junto.
+    tem ~17,5 mil grafias de procurador para ~10 mil escritorios reais -- a Clarke Modet
+    sozinha aparece em dezenas de formas. Se a chave errada for usada, todo o resto erra
+    junto. O bloco 'composicao' separa as grafias da propria firma dos agentes pessoa
+    fisica afiliados (curadoria endossada), para o total nunca chegar opaco.
     """
     chave = _chave_escritorio(nome)
     grafias = _linhas(
@@ -53,11 +101,101 @@ def inpi_escritorio_resolver(nome: str) -> dict:
         "processos": sum(g["n"] for g in grafias),
         "grafias_agrupadas": len(grafias),
         "grafias": grafias[:30],
+        "composicao": _composicao(chave, grafias),
         "chaves_parecidas_nao_agrupadas": [p["chave"] for p in parecidas],
         "nota": (
             "'chaves_parecidas_nao_agrupadas' sao candidatas a erro de digitacao que a "
             "normalizacao nao une (ex.: 'CLARK MODET'). Se alguma for a mesma empresa, "
             "acrescente em inpi/referencias/escritorios-apelidos.csv e reingira."
+        ),
+    }
+
+
+# Codigos de despacho relevantes a exigencia, com o rotulo empirico do
+# inpi/referencias/prazos-observados.md (indicio no texto, nao tabela oficial).
+# 'exigencia' = o INPI EMITIU uma exigencia; 'nao_cumprida'/'desfecho' = o que ele
+# publicou depois. NAO existe codigo "exigencia cumprida" -- ver docstring da tool.
+_CODIGOS_EXIGENCIA = {
+    "6.1": "exigencia tecnica (art. 25) — emitida",
+    "2.5": "exigencia formal preliminar (30 dias) — emitida",
+    "7.1": "parecer com exigencia (nao atende art. 25) — emitido",
+}
+_CODIGOS_DESFECHO = {
+    "11.2": "arquivado por exigencia NAO cumprida (art. 36 §1o)",
+    "9.1": "concedido (desfecho favoravel — exigencias, se houve, foram superadas)",
+    "9.2": "indeferido",
+    "11.1": "arquivado por exame nao requerido (art. 33)",
+}
+
+
+@mcp.tool()
+def inpi_exigencias_escritorio(escritorio: str, ano: int) -> dict:
+    """Exigencias PUBLICADAS para os processos de um escritorio num ano, e o desfecho
+    que o INPI publicou -- o mais perto que os dados abertos chegam de "exigencias
+    cumpridas".
+
+    ⚠️ LEIA ANTES DE RESPONDER: o CUMPRIMENTO de uma exigencia e uma PETICAO (servicos
+    206/207 na GRU), protocolada pelo escritorio, que os dados abertos do INPI NAO
+    publicam. NAO existe despacho "exigencia cumprida". Logo NAO da para contar
+    cumprimentos direto -- quem responder um numero de "exigencias cumpridas" esta
+    inventando. O que ESTA base permite, e o que esta tool devolve:
+      - exigencias EMITIDAS no ano (codigos 6.1, 2.5, 7.1): o universo que o escritorio
+        teve de responder;
+      - NAO cumpridas: codigo 11.2 (arquivamento por exigencia nao cumprida) -- estas o
+        INPI publica, e sao a unica afirmacao direta sobre cumprimento;
+      - desfechos (9.1 concessao, 9.2 indeferimento, 11.1 arquivamento art. 33) como
+        contexto.
+    PROXY honesto de "cumpridas com sucesso" = exigencias emitidas − arquivadas por nao
+    cumprimento (11.2), sempre com a ressalva de que e proxy, nao a contagem de peticoes.
+
+    Args:
+        escritorio: nome do escritorio (agrupado pela chave curada).
+        ano: ano-calendario da PUBLICACAO do despacho (data_rpi), ex.: 2026.
+    """
+    chave = _chave_escritorio(escritorio)
+    codigos = {**_CODIGOS_EXIGENCIA, **_CODIGOS_DESFECHO}
+    linhas = _linhas(
+        f"""SELECT d.codigo_despacho AS codigo,
+                   count(DISTINCT d.numero_inpi) AS processos
+            FROM despachos d
+            JOIN procuradores p ON p.numero_inpi = d.numero_inpi
+            JOIN escritorios e ON e.original = p.procurador
+            WHERE e.chave = ? AND year(d.data_rpi) = ?
+              AND d.codigo_despacho IN ({','.join('?' for _ in codigos)})
+            GROUP BY 1""",
+        [chave, int(ano), *codigos.keys()],
+    )
+    por_codigo = {l["codigo"]: l["processos"] for l in linhas}
+    emitidas = {c: por_codigo.get(c, 0) for c in _CODIGOS_EXIGENCIA}
+    desfechos = {c: por_codigo.get(c, 0) for c in _CODIGOS_DESFECHO}
+    total_emitidas = sum(emitidas.values())
+    nao_cumpridas = desfechos.get("11.2", 0)
+
+    return {
+        "escritorio": escritorio,
+        "chave": chave,
+        "ano": int(ano),
+        "exigencias_emitidas": {
+            "total": total_emitidas,
+            "por_codigo": {c: {"processos": emitidas[c], "descricao": _CODIGOS_EXIGENCIA[c]}
+                           for c in _CODIGOS_EXIGENCIA},
+        },
+        "arquivadas_por_nao_cumprimento": {
+            "codigo": "11.2", "processos": nao_cumpridas,
+            "descricao": _CODIGOS_DESFECHO["11.2"],
+        },
+        "desfechos": {c: {"processos": desfechos[c], "descricao": _CODIGOS_DESFECHO[c]}
+                      for c in _CODIGOS_DESFECHO},
+        "proxy_cumpridas": max(total_emitidas - nao_cumpridas, 0),
+        "aviso": (
+            "CUMPRIMENTO de exigencia NAO esta nos dados abertos: e peticao (servico "
+            "206/207), nao despacho. Nao ha 'exigencia cumprida' para contar. Os numeros "
+            "acima sao o que o INPI PUBLICOU -- exigencias emitidas e arquivamentos por "
+            "nao cumprimento (11.2). 'proxy_cumpridas' = emitidas − nao cumpridas e "
+            "APROXIMACAO grosseira (ignora exigencias do ano ainda em aberto e desfecho "
+            "publicado em outro ano); trate como ordem de grandeza, nunca como a conta do "
+            "INPI. Codigos vem de inpi/referencias/prazos-observados.md (indicio empirico, "
+            "nao tabela oficial de codigos)."
         ),
     }
 
@@ -114,6 +252,12 @@ def inpi_carteira(escritorio: str, cliente: str | None = None,
             if not (estados.get(l["numero_inpi"], {}).get("encerrado_em"))
         ]
 
+    grafias = _linhas(
+        """SELECT e.original, count(DISTINCT p.numero_inpi) n
+           FROM escritorios e JOIN procuradores p ON p.procurador = e.original
+           WHERE e.chave = ? GROUP BY 1""",
+        [chave],
+    )
     return {
         "escritorio": escritorio,
         "chave": chave,
@@ -122,6 +266,10 @@ def inpi_carteira(escritorio: str, cliente: str | None = None,
         "total": len(linhas),
         "truncado": len(linhas) > limite,
         "casos": linhas[:limite],
+        # Composicao da CHAVE inteira (antes de filtrar por cliente/apenas_vivos):
+        # explica de que a carteira do escritorio e feita -- firma vs agentes
+        # pessoa fisica afiliados. 'total' acima pode estar filtrado; isto e o contexto.
+        "composicao_da_chave": _composicao(chave, grafias),
     }
 
 

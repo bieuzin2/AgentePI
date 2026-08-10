@@ -126,6 +126,7 @@ com a ressalva de que é projeção, não a conta do INPI.
 | Quem são os maiores depositantes em determinada IPC? | 🔧 agregação simples sobre a base |
 | Como evoluiu o depósito nessa tecnologia nos últimos 10 anos? | 🔧 idem |
 | Meu concorrente teve pedido arquivado ou indeferido? | ✅ varredura por titular + código |
+| Quantas exigências um escritório recebeu/respondeu num período? | ⚠️ `inpi_exigencias_escritorio` — conta exigências **emitidas** (6.1/2.5/7.1) e arquivamentos por **não** cumprimento (11.2). "Exigência cumprida" é petição (206/207), **não publicada** na RPI — só proxy, nunca a conta exata |
 
 ### Anterioridade
 
@@ -149,6 +150,7 @@ Confronto pleno hoje só com documentos US (PPUBS) e EP/WO (EPO).
 | :--- | :--- |
 | Esse pedido BR tem equivalente em outros países? | ✅ `epo_familia_inpadoc` |
 | Em quais jurisdições meu concorrente protegeu essa invenção? | ✅ família INPADOC |
+| Esse titular protegeu em determinado país (ex.: Omã), cruzando com o BR? | ⚠️ Skill "Titular protegido num país" — carteira do titular → família INPADOC → filtra por país. Golfo/Omã (OM/GC) e várias jurisdições são **mal cobertas no DOCDB**: zero ali é lacuna da fonte, não ausência |
 | Qual o andamento do EP correspondente? | ✅ INPADOC legal — 50 eventos num caso testado |
 | A patente US caducou por falta de taxa de manutenção? | ✅ evento `LAPS` |
 | A taxa de manutenção US foi paga? | ✅ evento `FPAY` |
@@ -289,8 +291,8 @@ Em ordem de valor sobre esforço:
 2. **Projeção de anuidades** (médio) — art. 84 sobre `data_deposito`, com filtro de casos
    vivos e o `16.1` como teto. Entrega *"anuidades projetadas para o mês"* com a conta à
    vista.
-3. **Reingestão automática** (baixo) — os CSVs saem todo dia; hoje a carga é manual e a
-   data de corte envelhece em silêncio.
+3. **Reingestão automática** (baixo) — os CSVs são atualizados semanalmente (aos sábados);
+   hoje a carga é manual e a data de corte envelhece em silêncio.
 4. **Detecção de anulação** (baixo, alto valor) — sinalizar quando um despacho posterior
    anula um anterior. É a armadilha do `PI0803071`.
 5. **Tabela de códigos revisada** (alto, requer profissional habilitado) — só então faz

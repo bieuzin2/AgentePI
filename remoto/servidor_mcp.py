@@ -54,6 +54,11 @@ from inpi.consulta import (
     inpi_processo,
     inpi_titular_resolver,
 )
+from inpi.mercado import (
+    inpi_carteira,
+    inpi_escritorio_resolver,
+    inpi_exigencias_escritorio,
+)
 from inpi.financeiro import financeiro_janelas_desistencia, financeiro_projecao
 from inpi.gargalos import inpi_backlog, inpi_pipeline_comparado, inpi_tempo_fases
 from inpi.prazos import (
@@ -82,6 +87,8 @@ TOOLS = [
     # consulta processual
     inpi_processo, inpi_busca_texto, inpi_busca_ipc, inpi_despachos_por_rpi,
     inpi_titular_resolver, inpi_portfolio_titular, inpi_cobertura,
+    # escritorio: carteira, resolucao de chave e exigencias por periodo
+    inpi_escritorio_resolver, inpi_carteira, inpi_exigencias_escritorio,
     # prazos e anuidades
     inpi_anuidades, inpi_prazos_carteira, inpi_regra_jurisdicao,
     inpi_prazo_fase_nacional, inpi_novidades,

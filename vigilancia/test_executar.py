@@ -18,12 +18,14 @@ precisa_banco = pytest.mark.skipif(
 )
 
 
-def test_primeira_terca_do_mes():
+def test_primeira_execucao_do_mes():
     from datetime import date
 
-    assert executar.primeira_terca_do_mes(date(2026, 8, 4))   # 1a terca de agosto/2026
-    assert not executar.primeira_terca_do_mes(date(2026, 8, 11))  # 2a terca
-    assert not executar.primeira_terca_do_mes(date(2026, 8, 5))   # quarta
+    # Agora e agnostico ao dia da semana: primeiros 7 dias = primeira execucao mensal.
+    assert executar.primeira_execucao_do_mes(date(2026, 8, 2))    # 1o domingo de agosto/2026
+    assert executar.primeira_execucao_do_mes(date(2026, 8, 7))    # ainda nos 7 primeiros dias
+    assert not executar.primeira_execucao_do_mes(date(2026, 8, 9))   # 2o domingo
+    assert not executar.primeira_execucao_do_mes(date(2026, 8, 31))  # fim do mes
 
 
 @precisa_banco
@@ -38,7 +40,9 @@ def test_executar_dry_run_nao_envia_email_e_gera_markdown(tmp_path, monkeypatch)
     monkeypatch.setattr(executar, "ESTADO_EXTERIOR", tmp_path / "estado_ext.json")
 
     dash_teste = tmp_path / "panorama.html"
-    r = executar.executar(dry_run=True, sem_reingestao=True, hoje="2026-08-05",
+    # Dia > 7 de proposito: assim NAO e a primeira execucao do mes e o vigia 5
+    # (exterior/EPO) fica de fora -- mantem o teste sem rede.
+    r = executar.executar(dry_run=True, sem_reingestao=True, hoje="2026-08-12",
                            destino_dashboard=str(dash_teste))
 
     assert not r.get("erro")
@@ -60,6 +64,6 @@ def test_executar_sem_email_pula_envio(tmp_path, monkeypatch):
     monkeypatch.setattr(executar, "ESTADO_ANUIDADES", tmp_path / "ea.json")
     monkeypatch.setattr(executar, "ESTADO_EXTERIOR", tmp_path / "ee.json")
 
-    r = executar.executar(sem_reingestao=True, sem_email=True, hoje="2026-08-05",
+    r = executar.executar(sem_reingestao=True, sem_email=True, hoje="2026-08-12",
                            destino_dashboard=str(tmp_path / "panorama.html"))
     assert r["email"]["mensagem"] == "sem_email=True"

@@ -35,7 +35,8 @@ Faltando só `USPTO_API_KEY` (destrava andamento e PTAB dos EUA — a busca func
 
 ### Atualizar a base do INPI
 
-Os dados abertos saem todo dia; a RPI, toda terça.
+Os dados abertos são atualizados semanalmente, aos sábados; a RPI é publicada às terças
+(o CSV de sábado já incorpora a RPI da(s) terça(s) anterior(es)).
 
 ```bash
 .venv/Scripts/python.exe inpi/ingest.py --baixar

@@ -464,22 +464,29 @@ def inpi_cobertura() -> dict:
     )[0]
     r["processos"] = _linhas("SELECT count(*) n FROM biblio")[0]["n"]
     r["com_titulo_resumo"] = _linhas("SELECT count(*) n FROM conteudo")[0]["n"]
-    r["fonte"] = "https://dadosabertos.inpi.gov.br/index/patentes/ (CSV, diario)"
+    r["fonte"] = (
+        "https://dadosabertos.inpi.gov.br/index/patentes/ (CSV, atualizado semanalmente, "
+        "aos sabados)"
+    )
     r["nota"] = (
         "A base e um dump local. Para atualizar: 'python inpi/ingest.py --baixar'. "
         "Despachos posteriores a ultima_rpi nao estao aqui."
     )
 
     # A base envelhece em silencio, e base velha faz busca vazia parecer ausencia de
-    # anterioridade. Uma RPI sai por semana, entao mais de 8 dias significa que ja
-    # houve publicacao que este dump nao viu.
+    # anterioridade. Duas cadencias em jogo: a RPI sai as TERCAS; os dados abertos so
+    # incorporam essa RPI no refresh semanal de SABADO. Logo o normal e ter ate ~11
+    # dias de atraso (RPI de terca so aparece no sabado seguinte, e envelhece ate a
+    # proxima carga). So acima de ~13 dias e que certamente se perdeu um refresh de
+    # sabado inteiro -- ai sim ha revista que este dump nao viu.
     atraso = (date.today() - r["ultima_rpi"]).days
     r["dias_desde_a_ultima_rpi_carregada"] = atraso
-    if atraso > 8:
+    if atraso > 13:
         r["ALERTA_BASE_DESATUALIZADA"] = (
-            f"A ultima RPI carregada tem {atraso} dias. O INPI publica semanalmente, "
-            "as tercas -- ha pelo menos uma revista que esta base nao viu. NAO conclua "
-            "ausencia de anterioridade nem de movimentacao processual antes de rodar "
-            "'python inpi/ingest.py --baixar'."
+            f"A ultima RPI carregada tem {atraso} dias. Os dados abertos do INPI sao "
+            "atualizados aos sabados (incorporando a RPI das tercas anteriores) -- com "
+            "esse atraso, ja houve pelo menos um refresh de sabado que esta base nao "
+            "viu. NAO conclua ausencia de anterioridade nem de movimentacao processual "
+            "antes de rodar 'python inpi/ingest.py --baixar'."
         )
     return r

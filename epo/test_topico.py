@@ -2,7 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
+from epo import epo_mcp
 from epo import topico as tp
+
+# topico.py importa cliente/_loga_quota/... de epo.epo_mcp DENTRO da funcao (import
+# adiado, para quebrar o ciclo de import -- ver epo/mcp_app.py). Por isso o patch
+# tem de mirar o modulo de origem, epo.epo_mcp, e nao epo.topico.
 
 
 def test_monta_cql_so_termo():
@@ -30,8 +35,8 @@ def test_amostra_fora_da_faixa_e_grampeada(monkeypatch):
         "ops:world-patent-data": {"ops:biblio-search": {"@total-result-count": "0"}}
     }
     client.published_data_search.return_value.content = b"{}"
-    with patch.object(tp, "cliente", return_value=client), \
-         patch.object(tp, "_loga_quota"):
+    with patch.object(epo_mcp, "cliente", return_value=client), \
+         patch.object(epo_mcp, "_loga_quota"):
         tp.epo_panorama_topico("covid", amostra=99999)
     assert client.published_data_search.call_args.kwargs["range_end"] == tp.AMOSTRA_MAXIMA
 
@@ -91,16 +96,26 @@ def test_nota_amostra_so_quando_total_maior_que_amostra():
         }
     }
     client.published_data_search.return_value.content = b"{}"
-    with patch.object(tp, "cliente", return_value=client), \
-         patch.object(tp, "_loga_quota"):
+    with patch.object(epo_mcp, "cliente", return_value=client), \
+         patch.object(epo_mcp, "_loga_quota"):
         r = tp.epo_panorama_topico("covid", amostra=1)
     assert r["total"] == 3
     assert "nota_amostra" in r
 
 
+def test_nota_zero_enquadra_cobertura_da_fonte():
+    # Jurisdicao mal coberta no DOCDB: a nota deve dizer que 0 e lacuna da fonte.
+    assert "cobertura" in tp._nota_zero("OM").lower()
+    assert "cobertura" in tp._nota_zero("np").lower()
+    # Pais coberto mas texto nao-EN (ex.: BR): a nota deve sugerir IPC/CPC, nao ausencia.
+    assert "ipc" in tp._nota_zero("BR").lower()
+    # Sem pais: nota generica, ainda apontando IPC/CPC como alternativa.
+    assert "ipc" in tp._nota_zero(None).lower()
+
+
 def test_sem_resultado_vira_resposta_vazia_nao_erro():
     client = MagicMock()
     client.published_data_search.side_effect = Exception("404 Client Error")
-    with patch.object(tp, "cliente", return_value=client):
+    with patch.object(epo_mcp, "cliente", return_value=client):
         r = tp.epo_panorama_topico("termo inexistente")
     assert r["total"] == 0 and r["top_titulares"] == []

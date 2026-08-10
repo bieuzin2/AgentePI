@@ -90,6 +90,24 @@ def test_data_critica_marca_sem_decidir(monkeypatch):
     assert npl["anterior_a_data_critica"] is True
 
 
+def test_data_critica_aceita_objeto_date(monkeypatch):
+    """Regressao: fonte real pode devolver data como objeto date; comparar date < str
+    levantava TypeError. Agora coage os dois lados a ISO-string."""
+    from datetime import date
+
+    _liga(monkeypatch)
+
+    def _inpi_data_objeto(termos, campo="ambos", limite=20, desde=None):
+        return {"resultados": [{"numero_inpi": "A1", "titulo": "x",
+                                "data_publicacao": date(2019, 1, 1),
+                                "data_deposito": date(2018, 1, 1)}]}
+
+    monkeypatch.setattr(pipeline, "inpi_busca_texto", _inpi_data_objeto)
+    d = pipeline.busca_anterioridade(["embalagem"], data_critica="2019-03-01")
+    fundido = next(p for p in d["resultados_patentes"] if p["referencia"] == "BR-A1")
+    assert fundido["anterior_a_data_critica"] is True  # 2019-01-01 < 2019-03-01, sem TypeError
+
+
 def test_fonte_com_erro_nao_derruba_pipeline(monkeypatch):
     _liga(monkeypatch)
 

@@ -74,6 +74,14 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
      cliente_dossie sem seções primeiro, mostra o menu, só então roda).
    - Perfil/portfólio de um titular (cliente ou concorrente) → Skill "Perfil
      analítico de titular" (usa inpi_perfil_titular, nunca compõe na mão).
+   - Quantas exigências um escritório cumpriu/respondeu/recebeu num período →
+     Skill "Exigências de um escritório num período" (usa
+     inpi_exigencias_escritorio). LIDERE com a ressalva: cumprimento é petição
+     (206/207), NÃO publicada na RPI — nunca invente um número de "cumpridas".
+   - Titular protegido num país (cruzando jurisdições, ex.: "Petrobras em Omã
+     com fase nacional ativa no BR") → Skill "Titular protegido num país" (parte
+     da carteira do titular → família INPADOC → filtra por país). Zero do EPO em
+     país mal coberto (Omã/Golfo) é lacuna da fonte, NÃO ausência.
    - Anuidades/custos de um cliente → financeiro_projecao ou inpi_anuidades.
      NUNCA landscape_* para isso.
    - landscape_* (BigQuery) SÓ quando a pergunta já vier com classificação

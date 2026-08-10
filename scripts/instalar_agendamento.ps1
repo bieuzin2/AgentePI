@@ -1,7 +1,10 @@
 # Cria a tarefa semanal de vigilancia no Windows Task Scheduler.
-# Terca-feira as 20h (pos-RPI, que sai as tercas). O vigia 5 (exterior) so roda
-# na primeira terca do mes -- essa logica fica dentro de vigilancia/executar.py
-# (primeira_terca_do_mes), nao em duas tarefas agendadas separadas.
+# Domingo as 08h. Os dados abertos do INPI sao atualizados aos SABADOS (ja
+# incorporando a RPI das tercas anteriores); rodar domingo garante que a
+# reingestao pega o refresh mais recente -- rodar antes reprocessaria o mesmo CSV.
+# O vigia 5 (exterior) so roda na primeira execucao do mes -- essa logica fica
+# dentro de vigilancia/executar.py (primeira_execucao_do_mes), nao em duas tarefas
+# agendadas separadas.
 #
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File scripts\instalar_agendamento.ps1
@@ -22,7 +25,7 @@ if (-not (Test-Path $Python)) {
 $Acao = New-ScheduledTaskAction -Execute $Python `
     -Argument "-m vigilancia.executar" -WorkingDirectory $Raiz
 
-$Gatilho = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At 20:00
+$Gatilho = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 08:00
 
 $Config = New-ScheduledTaskSettingsSet -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1) -RestartCount 2 `
@@ -33,6 +36,6 @@ Register-ScheduledTask -TaskName $Nome -Action $Acao -Trigger $Gatilho `
     "Vigilancia autonoma INPI/EPO (docs/plano-v2.md 4.1): reingestao + 5 vigias + e-mail de alerta." `
     -Force
 
-Write-Host "Tarefa '$Nome' instalada: toda terca as 20h."
+Write-Host "Tarefa '$Nome' instalada: todo domingo as 08h."
 Write-Host "Confira com: Get-ScheduledTask -TaskName '$Nome'"
 Write-Host "Rode manualmente para testar: Start-ScheduledTask -TaskName '$Nome'"

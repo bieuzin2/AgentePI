@@ -42,6 +42,31 @@ CACHE_DBM = ROOT / "epo" / "data" / "cache.dbm"
 
 _client: epo_ops.Client | None = None
 
+TTL_CACHE = 60 * 60 * 24 * 14  # 2 semanas: familia/status legal nao mudam de um dia p/ outro
+
+
+def _regiao_cache():
+    """Regiao dogpile para o cache de respostas OPS, escolhendo o backend pela
+    plataforma.
+
+    O backend 'dogpile.cache.dbm' faz lock de arquivo com `fcntl`, que so existe
+    em Unix. No Render (Linux) e o ideal: persiste entre execucoes e poupa quota.
+    No Windows `fcntl` nao existe e QUALQUER chamada EPO quebrava com 'No module
+    named fcntl' -- entao la caimos para cache em memoria (vale dentro do processo,
+    o suficiente para dev/teste). Producao continua com dbm persistente."""
+    try:
+        import fcntl  # noqa: F401  -- so testa a disponibilidade
+    except ImportError:
+        return make_region().configure(
+            "dogpile.cache.memory", expiration_time=TTL_CACHE
+        )
+    CACHE_DBM.parent.mkdir(parents=True, exist_ok=True)
+    return make_region().configure(
+        "dogpile.cache.dbm",
+        expiration_time=TTL_CACHE,
+        arguments={"filename": str(CACHE_DBM)},
+    )
+
 
 def cliente() -> epo_ops.Client:
     """Cliente EPO OPS. Levanta erro claro se as credenciais nao estiverem no .env."""
@@ -53,15 +78,9 @@ def cliente() -> epo_ops.Client:
                 "EPO_OPS_KEY e/ou EPO_OPS_SECRET ausentes no .env. "
                 "Registre um app em https://developers.epo.org (gratis, 4 GB/semana)."
             )
-        CACHE_DBM.parent.mkdir(parents=True, exist_ok=True)
-        region = make_region().configure(
-            "dogpile.cache.dbm",
-            expiration_time=60 * 60 * 24 * 14,  # 2 semanas
-            arguments={"filename": str(CACHE_DBM)},
-        )
         _client = epo_ops.Client(
             key=key, secret=secret, accept_type="json",
-            middlewares=[Dogpile(region=region), Throttler()],
+            middlewares=[Dogpile(region=_regiao_cache()), Throttler()],
         )
     return _client
 
@@ -193,14 +212,19 @@ def _resumo_documento(ex: dict) -> dict:
     }
 
 
-_RE_REF = re.compile(r"^([A-Z]{2})[-. ]?(\d+)[-. ]?([A-Z]\d?)?$", re.IGNORECASE)
+# O numero pode trazer um prefixo de 1-2 letras antes dos digitos: e o caso dos BR
+# antigos -- PI (privilegio de invencao), MU (modelo de utilidade), C1/DI/PP... Sem
+# aceitar esse prefixo, 'BR-PI0803071-A2' era rejeitado e o vigia de exterior quebrava
+# em toda carteira com caso pre-2012.
+_RE_REF = re.compile(r"^([A-Z]{2})[-. ]?([A-Z]{0,2}\d+)[-. ]?([A-Z]\d?)?$", re.IGNORECASE)
 
 
 def _entrada(referencia: str):
     """Converte qualquer forma usual de referencia no input que a API aceita.
 
     Aceita 'BR-102022010731-A2' (que e o que epo_busca devolve), 'BR102022010731A2',
-    'BR102022010731' e 'BR.102022010731.A2'.
+    'BR102022010731', 'BR.102022010731.A2' e os BR antigos com prefixo de letra
+    ('BR-PI0803071-A2', 'BRPI0803071', 'BR-MU8802...').
 
     Detalhe que custa 404 se ignorado: o formato **epodoc nao aceita kind code**.
     'BR102022010731A2' devolve 404; 'BR102022010731' devolve 200. Docdb aceita o kind
