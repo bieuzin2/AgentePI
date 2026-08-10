@@ -18,6 +18,7 @@ dependencies = [
     "python-epo-ops-client",
     "httpx",
     "requests",
+    "beautifulsoup4",
     "openpyxl",
     "starlette",
     "uvicorn",
@@ -25,7 +26,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["inpi", "epo", "vigilancia", "busca", "landscape"]
+packages = ["inpi", "epo", "vigilancia", "busca", "landscape", "enriquecimento", "enriquecimento.fontes"]
 
 [tool.pytest.ini_options]
 markers = ["online: requer credencial/rede real, nao roda no fluxo padrao"]

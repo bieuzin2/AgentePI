@@ -8,6 +8,7 @@
 inpi/data/
 epo/data/
 vigilancia/data/
+enriquecimento/data/
 *.duckdb
 *.duckdb.wal
 

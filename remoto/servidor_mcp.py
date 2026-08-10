@@ -54,6 +54,7 @@ from inpi.consulta import (
     inpi_processo,
     inpi_titular_resolver,
 )
+from inpi.inpi_mcp import inpi_citacoes, inpi_reivindicacoes
 from inpi.mercado import (
     inpi_carteira,
     inpi_escritorio_resolver,
@@ -87,6 +88,8 @@ TOOLS = [
     # consulta processual
     inpi_processo, inpi_busca_texto, inpi_busca_ipc, inpi_despachos_por_rpi,
     inpi_titular_resolver, inpi_portfolio_titular, inpi_cobertura,
+    # enriquecimento (reivindicacoes/citacoes via Google Patents + familia EPO)
+    inpi_reivindicacoes, inpi_citacoes,
     # escritorio: carteira, resolucao de chave e exigencias por periodo
     inpi_escritorio_resolver, inpi_carteira, inpi_exigencias_escritorio,
     # prazos e anuidades

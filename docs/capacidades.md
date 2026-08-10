@@ -134,11 +134,16 @@ com a ressalva de que é projeção, não a conta do INPI.
 | :--- | :--- |
 | Existe patente BR sobre embalagem biodegradável de alginato? | ✅ busca em título e resumo |
 | E por classificação, independente de vocabulário? | ✅ `inpi_busca_ipc` |
-| Monte o quadro de confronto da reivindicação 1 contra D1 e D2 | ⚠️ ver ressalva abaixo |
+| Monte o quadro de confronto da reivindicação 1 contra D1 e D2 | ✅ `inpi_reivindicacoes` (ver abaixo) |
+| Quem cita/é citado por esse documento? | ✅ `inpi_citacoes` — só Google Patents; USPTO/PatentsView foi desligada em mar/2026 |
 
-⚠️ **A base do INPI não tem o quadro reivindicatório** — só título e resumo. Para confronto
-elemento a elemento de um documento BR é preciso o PDF do pedido, que não está aqui.
-Confronto pleno hoje só com documentos US (PPUBS) e EP/WO (EPO).
+**A base aberta do INPI não tem o quadro reivindicatório** — só título e resumo — mas
+`inpi_reivindicacoes` não depende mais disso: busca texto integral no Google Patents (cobre
+pedido BR direto, sem passagem PCT/WO — o Google indexa/normaliza o PDF do INPI), com
+fallback para `epo_texto_integral` num membro WO/EP da família INPADOC quando o Google não
+acha o documento. Só cai no PDF salvo manualmente (fluxo antigo) se as duas fontes de texto
+integral falharem. Ver `enriquecimento/` (roda local, nunca no MCP remoto — sem navegador
+no Render) e `docs/superpowers/plans/2026-08-10-enriquecimento-copilot-fix.md`.
 
 ---
 

@@ -138,27 +138,71 @@ def tarefa_concluir(id: int) -> dict:
 
 @mcp.tool()
 def inpi_reivindicacoes(numero: str) -> dict:
-    """Quadro reivindicatorio de um pedido BR publicado, lido do PDF oficial do INPI.
+    """Quadro reivindicatorio de um pedido BR, via texto integral (Google
+    Patents / familia INPADOC no EPO) -- com fallback pro PDF oficial salvo
+    manualmente quando nenhuma fonte de texto integral tem o documento.
 
     USE QUANDO: for montar um claim chart de um documento BR (a skill
     analista-patentes-inpi ja suporta US/EP; isto destrava o BR).
 
-    FONTE: PDF salvo em inpi/data/pdfs/{numero_normalizado}.pdf. NAO HA download
-    automatico confiavel do portal do INPI (busca.inpi.gov.br/pePI e stateful, sem
-    endpoint publico estavel por numero -- ver docs/aceite/F4-pdf-claimchart.md).
-    Se o PDF nao estiver na pasta, a resposta traz o caminho esperado: baixe manualmente
-    no portal e salve ali.
+    FONTE (nesta ordem):
+    1. Google Patents -- serve o texto integral que o INPI/EPO nao tem para
+       pedidos depositados so no Brasil (sem passagem PCT/WO). Sem sessao, sem
+       captcha, com cache local (ver enriquecimento/).
+    2. Familia INPADOC + epo_texto_integral -- quando o Google Patents nao
+       acha o documento, tenta o texto integral OFICIAL de um membro WO/EP da
+       mesma familia (API do EPO OPS).
+    3. PDF salvo manualmente em inpi/data/pdfs/{numero_normalizado}.pdf --
+       ultimo recurso. NAO HA download automatico confiavel do portal do INPI
+       (busca.inpi.gov.br/pePI e stateful, sem endpoint publico estavel por
+       numero -- ver docs/aceite/F4-pdf-claimchart.md).
 
     Aceita os mesmos formatos de numero que inpi_processo.
 
-    LEIA 'aviso' e 'secoes_ausentes' sempre: PDF de imagem (sem OCR, fora de escopo
-    v2.0) e secao nao encontrada pelo marcador viram declaracao de cobertura, nunca
-    erro silencioso. Numeracao de reivindicacao e heuristica -- confira contra o
-    PDF original antes de citar em parecer.
+    LEIA 'status'/'mensagem' (fontes 1-2) ou 'aviso'/'secoes_ausentes' (fonte
+    3, PDF): nenhuma fonte encontrada vira declaracao de cobertura, nunca erro
+    silencioso. Numeracao de reivindicacao e heuristica -- confira contra o
+    documento original antes de citar em parecer.
     """
+    from inpi.consulta import normaliza_numero
+
+    num = normaliza_numero(numero)
+
+    from enriquecimento import harness
+
+    enriquecido = harness.enriquecer_claims(num)
+    if enriquecido["status"] == "ok":
+        return enriquecido
+
     from inpi import pdf_inpi
 
-    return pdf_inpi.carregar(numero)
+    do_pdf = pdf_inpi.carregar(numero)
+    if not do_pdf.get("erro"):
+        return do_pdf
+
+    return {
+        **enriquecido,
+        "tambem_tentado_pdf_local": do_pdf,
+    }
+
+
+@mcp.tool()
+def inpi_citacoes(numero: str) -> dict:
+    """Documentos citados (citando) e que citam (citada_por) um pedido/patente
+    BR, via Google Patents -- o EPO OPS e o PPUBS nao tem essa cobertura para
+    BR (PatentsView, a fonte de citacoes do USPTO, foi desligada em mar/2026).
+
+    USE QUANDO: for avaliar o estado da tecnica citado no exame de um processo
+    BR, ou mapear quem cita uma patente do cliente.
+
+    Aceita os mesmos formatos de numero que inpi_processo. Lista vazia e um
+    resultado valido (documento sem citacao registrada, comum em modelos de
+    utilidade) -- leia 'mensagem' para distinguir de falha de busca.
+    """
+    from inpi.consulta import normaliza_numero
+    from enriquecimento import harness
+
+    return harness.enriquecer_citacoes(normaliza_numero(numero))
 
 
 # ---------------------------------------------------------------------------
