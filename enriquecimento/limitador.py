@@ -29,6 +29,7 @@ INTERVALO_MIN_SEGUNDOS = {
     "patents.google.com": 2.0,
     "patentscope.wipo.int": 3.0,
     "worldwide.espacenet.com": 5.0,
+    "busca.inpi.gov.br": 2.0,
 }
 INTERVALO_PADRAO = 3.0
 

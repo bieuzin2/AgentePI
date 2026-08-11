@@ -21,6 +21,7 @@ import duckdb
 from dotenv import load_dotenv
 
 from inpi.db import BANCO as BANCO_INPI
+from inpi.ingest import PROCURADORES_SIGILO
 
 # Task Scheduler nao herda o .env -- carrega aqui, como epo/epo_mcp.py faz.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -46,3 +47,59 @@ def sincronizar() -> dict:
             con.close()
     except Exception as exc:  # rede/MotherDuck fora: loga, nao derruba a ingestao
         return {"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"}
+
+
+def sincronizar_sigilo_incremental() -> dict:
+    """Sobe SO as linhas curadas de procuradores-sigilo.csv para o MotherDuck,
+    sem reenviar o banco inteiro (1,2 GB).
+
+    Espelha exatamente o merge de inpi.ingest._mescla_procuradores_sigilo, mas
+    contra a copia remota: insere em `procuradores` apenas os numero_inpi que
+    (a) existem em `biblio` remoto e (b) ainda NAO tem procurador remoto. E
+    idempotente -- rodar duas vezes nao duplica. A tabela `escritorios` NAO
+    precisa mudar: as grafias coletadas ja sao grafias oficiais da firma, ja
+    presentes em `escritorios` remoto (o join escritorios.original = procurador
+    ja as resolve para a chave canonica).
+
+    Use quando so a coleta de sigilo mudou; para reconstrucao completa da base
+    (ingestao semanal), use sincronizar(). Nunca levanta."""
+    token = os.environ.get("MOTHERDUCK_TOKEN")
+    if not token:
+        return {"ok": False, "pulado": True,
+                "mensagem": "MOTHERDUCK_TOKEN ausente -- sync pulado."}
+    if not PROCURADORES_SIGILO.exists():
+        return {"ok": True, "inseridos": 0, "mensagem": "sem CSV curado."}
+    try:
+        con = duckdb.connect(f"md:?motherduck_token={token}")
+        try:
+            con.execute("USE inpi")
+            antes = con.execute("SELECT count(*) FROM procuradores").fetchone()[0]
+            con.execute(f"""
+              CREATE OR REPLACE TEMP TABLE _sigilo_curado AS
+              SELECT * FROM read_csv('{PROCURADORES_SIGILO.as_posix()}', header=true,
+                                      delim=',', quote='"', escape='"',
+                                      columns={{
+                                        'numero_inpi': 'VARCHAR', 'procurador': 'VARCHAR',
+                                        'escritorio_canonico': 'VARCHAR', 'fonte': 'VARCHAR',
+                                        'coletado_em': 'VARCHAR', 'observacao': 'VARCHAR'
+                                      }})
+            """)
+            con.execute("""
+              INSERT INTO procuradores
+                (codigo_interno, numero_inpi, procurador,
+                 cgccpfprocurador, tipopessoaprocurador, data_inicio_procurador)
+              SELECT b.codigo_interno, s.numero_inpi, s.procurador, NULL, NULL, NULL
+              FROM _sigilo_curado s
+              JOIN biblio b USING (numero_inpi)
+              WHERE s.numero_inpi NOT IN (SELECT numero_inpi FROM procuradores)
+            """)
+            depois = con.execute("SELECT count(*) FROM procuradores").fetchone()[0]
+            return {"ok": True, "inseridos": depois - antes}
+        finally:
+            con.close()
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"}
+
+
+if __name__ == "__main__":
+    print(sincronizar_sigilo_incremental())

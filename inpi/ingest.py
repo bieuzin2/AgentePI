@@ -26,6 +26,7 @@ BASE_URL = "https://dadosabertos.inpi.gov.br/download/patentes/"
 RAIZ = Path(__file__).resolve().parent
 BRUTO = RAIZ / "data" / "raw"
 BANCO = RAIZ / "data" / "inpi.duckdb"
+PROCURADORES_SIGILO = RAIZ / "referencias" / "procuradores-sigilo.csv"
 
 # nome_da_tabela -> arquivo CSV
 TABELAS = {
@@ -278,6 +279,48 @@ def _materializa_nomes(con) -> None:
               flush=True)
 
 
+def _mescla_procuradores_sigilo(con) -> None:
+    """Preenche procurador para pedidos em sigilo, a partir de coleta propria.
+
+    O dump oficial (PATENTES_PROCURADORES.csv) chega em branco para pedidos em
+    sigilo (~43 mil registros, so 3 com procurador) porque o INPI oculta o campo
+    antes da publicacao. O site do INPI (busca avancada por procurador) mostra
+    esse vinculo mesmo em sigilo -- referencias/procuradores-sigilo.csv e a coleta
+    manual desse vinculo (ver inpi/coleta_sigilo.py), keyed por numero_inpi.
+
+    So insere onde a base oficial NAO tem procurador para aquele numero_inpi:
+    quando o pedido publica e o dump oficial passa a trazer o procurador de
+    verdade, a linha curada e ignorada aqui e nunca duplica ou compete com o
+    dado oficial -- auto-cura sem manutencao.
+    """
+    if not PROCURADORES_SIGILO.exists():
+        return
+    t0 = time.time()
+    antes = con.execute("SELECT count(*) FROM procuradores").fetchone()[0]
+    con.execute(f"""
+      CREATE OR REPLACE TEMP TABLE _sigilo_curado AS
+      SELECT * FROM read_csv('{PROCURADORES_SIGILO.as_posix()}', header=true,
+                              delim=',', quote='"', escape='"',
+                              columns={{
+                                'numero_inpi': 'VARCHAR', 'procurador': 'VARCHAR',
+                                'escritorio_canonico': 'VARCHAR', 'fonte': 'VARCHAR',
+                                'coletado_em': 'VARCHAR', 'observacao': 'VARCHAR'
+                              }})
+    """)
+    con.execute("""
+      INSERT INTO procuradores
+        (codigo_interno, numero_inpi, procurador,
+         cgccpfprocurador, tipopessoaprocurador, data_inicio_procurador)
+      SELECT b.codigo_interno, s.numero_inpi, s.procurador, NULL, NULL, NULL
+      FROM _sigilo_curado s
+      JOIN biblio b USING (numero_inpi)
+      WHERE s.numero_inpi NOT IN (SELECT numero_inpi FROM procuradores)
+    """)
+    depois = con.execute("SELECT count(*) FROM procuradores").fetchone()[0]
+    print(f"  sigilo curado  +{depois - antes:,} procuradores preenchidos "
+          f"{time.time() - t0:5.1f}s", flush=True)
+
+
 def main() -> int:
     if "--baixar" in sys.argv:
         print(f"Baixando de {BASE_URL}", flush=True)
@@ -322,6 +365,7 @@ def main() -> int:
     # com indices em 8 tabelas a carga travava por mais de 20 minutos a 100% de CPU
     # (construcao de ART sobre VARCHAR); sem eles, termina em ~2 min e as consultas do
     # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
+    _mescla_procuradores_sigilo(con)
     _materializa_nomes(con)
     _materializa_titulares(con)
     _vota_identidade(con)
