@@ -7,7 +7,24 @@ removido -- nada mais depende de upload manual de portfolio -- mas o arquivo
 fisico segue hospedando tarefas/radar. So a CONEXAO ficou aqui; cada tabela e
 criada por quem a usa (tarefas.py::ESQUEMA, radar.py::ESQUEMA_RADAR).
 
-MotherDuck (MOTHERDUCK_TOKEN no ambiente) tem prioridade sobre o arquivo local.
+MotherDuck (MOTHERDUCK_TOKEN no ambiente) tem prioridade sobre o arquivo
+local -- AO CONTRARIO de inpi/db.py e enriquecimento/db.py, e de propósito:
+tarefas/radar não têm dump local versionado, o MotherDuck é a ÚNICA fonte
+compartilhada entre o agente remoto (Render/Teams) e qualquer uso local
+(vigilancia/sync_motherduck.py recusa deliberadamente sincronizar `carteira`
+justamente porque "o agente remoto cria tarefas direto na nuvem" -- não há
+cópia local a preferir).
+
+ARMADILHA PARA TESTES (não para produção): como qualquer import que carregue
+o .env (inpi.familia_epo, entre outros) põe MOTHERDUCK_TOKEN no ambiente do
+processo inteiro, testes que monkeypatcham `BANCO`/`BANCO_TAREFAS` para um
+arquivo local temporário -- esperando isolamento -- acabam indo para o
+MotherDuck de qualquer jeito se o token estiver no ambiente. Confirmado ao
+vivo: rodar a suite local escreveu 72 linhas de lixo de teste na tabela
+`tarefas` REAL do MotherDuck. O fix correto NÃO é mudar esta prioridade
+(mudaria o comportamento de produção/uso interativo, que depende dela) -- é
+o `conftest.py` da raiz, que limpa MOTHERDUCK_TOKEN do ambiente para todo
+teste por padrão.
 """
 
 from __future__ import annotations

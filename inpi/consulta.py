@@ -127,6 +127,8 @@ def inpi_processo(numero: str) -> dict:
 
     USE QUANDO: precisar do andamento de um pedido BR, do titular real, ou do
     historico processual. E a unica fonte aqui com o historico completo do INPI.
+    Para reivindicacoes (claim chart), use inpi_reivindicacoes -- ela nao esta
+    aqui porque cobre BR/US/EP/WO, nao so processo BR.
 
     Aceita 'BR 10 2022 010731 2', 'BR-102022010731-A2' (como o EPO devolve),
     '102022010731' ou 'PI1107322'.
@@ -363,6 +365,10 @@ def inpi_titular_resolver(nome: str) -> dict:
     A chave e 'CNPJ:xxxxxxxx' (raiz de 8 digitos, que junta matriz e filial) quando ha
     documento, e o nome normalizado quando nao ha -- caso de 65% dos depositantes, que
     sao estrangeiros.
+
+    ISTO E RESOLUCAO DE IDENTIDADE, NUNCA RESPOSTA DE VOLUME/RANKING/TECNOLOGIA:
+    use para CONFERIR a chave antes de citar um numero, nao para responder "quantos
+    processos" ou "qual o perfil" -- isso e inpi_portfolio_titular/inpi_perfil_titular.
     """
     chaves = _linhas(
         """SELECT t.chave, count(DISTINCT dp.depositante) grafias,
@@ -490,3 +496,31 @@ def inpi_cobertura() -> dict:
             "antes de rodar 'python inpi/ingest.py --baixar'."
         )
     return r
+
+
+def aviso_lag_publicacao() -> str:
+    """Ressalva para QUALQUER serie agregada por ano de DEPOSITO (nao de
+    publicacao). Auditado no plano de refino 2026-08: uma pergunta como
+    "quantos depositos a Clarke teve em 2026" caiu de 1918 (2023) para 4
+    (2026) na base -- nao e queda de atividade, e sigilo do pedido ainda nao
+    vencido (art. 30 LPI: publicacao ~18 meses apos deposito, o INPI so
+    incorpora essa publicacao nos dados abertos quando ela sai na RPI).
+
+    Ancorado na cobertura REAL da base (inpi_cobertura), nao num numero fixo
+    de meses -- publicacao antecipada a pedido do depositante (art. 17 LPI)
+    torna o corte de "18 meses" difuso e por titular. Sem esta ancora, o
+    agente conversacional inventa a propria explicacao (ja aconteceu:
+    'carteira truncada' para um numero que era o dado publicado correto).
+    """
+    cob = inpi_cobertura()
+    return (
+        f"SERIE POR ANO DE DEPOSITO -- parcial e CRESCENTE nos anos mais recentes, "
+        f"nao comparavel com anos maduros. Motivo: sigilo do pedido (art. 30 LPI, "
+        f"pedido so publica ~18 meses apos o deposito -- pode ser antecipado pelo "
+        f"depositante via art. 17), e a base so reflete o que ja foi PUBLICADO ate "
+        f"{cob['ultima_rpi']}. Um numero baixo no ano corrente ou anterior e SIGILO, "
+        f"nao queda de atividade -- nunca afirme 'reducao' ou 'carteira truncada' a "
+        f"partir disso sem citar esta ressalva. Se a pergunta for sobre o que foi "
+        f"efetivamente PUBLICADO recentemente (sem esse lag), prefira um eixo por "
+        f"data de PUBLICACAO quando a tool oferecer -- essa metrica e completa."
+    )

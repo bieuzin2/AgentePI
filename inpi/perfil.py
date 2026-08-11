@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from inpi.consulta import _linhas
+from inpi.consulta import _linhas, aviso_lag_publicacao
 from inpi.mcp_app import mcp
 from inpi.titulares import chaves_de, relacionados, resolver
 
@@ -167,6 +167,7 @@ def inpi_perfil_titular(nome: str, foco_top: int = 8, escritorios_top: int = 5,
         "com_data_de_deposito": com_ano,
         "sem_data_de_deposito": total - com_ano,
         "evolucao_por_ano": por_ano,
+        "aviso_lag_publicacao": aviso_lag_publicacao(),
         "foco_tecnologico": _foco_tecnologico(chave, foco_top),
         "escritorios": _escritorios(chave, escritorios_top),
         "escritorios_ultimos_anos": _escritorios(

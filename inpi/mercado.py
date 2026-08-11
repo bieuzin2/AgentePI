@@ -7,7 +7,7 @@ inalteradas -- so mudou o arquivo que as contem.
 from __future__ import annotations
 
 from inpi import escritorios as esc
-from inpi.consulta import _linhas
+from inpi.consulta import _linhas, aviso_lag_publicacao
 from inpi.mcp_app import mcp
 from inpi.prazos import _carregar_lote
 
@@ -82,6 +82,11 @@ def inpi_escritorio_resolver(nome: str) -> dict:
     sozinha aparece em dezenas de formas. Se a chave errada for usada, todo o resto erra
     junto. O bloco 'composicao' separa as grafias da propria firma dos agentes pessoa
     fisica afiliados (curadoria endossada), para o total nunca chegar opaco.
+
+    ISTO E RESOLUCAO DE IDENTIDADE, NUNCA RESPOSTA DE VOLUME/RANKING/TECNOLOGIA:
+    'processos' aqui e o total sob a chave, para CONFERIR a chave -- nao chame esta
+    tool para responder "quantos processos", "quem lidera" ou "qual a tecnologia
+    dominante"; use inpi_carteira/inpi_producao_escritorio/inpi_mercado para isso.
     """
     chave = _chave_escritorio(nome)
     grafias = _linhas(
@@ -205,11 +210,18 @@ def inpi_carteira(escritorio: str, cliente: str | None = None,
                   apenas_vivos: bool = True, limite: int = 200) -> dict:
     """Carteira de um escritorio, opcionalmente filtrada por cliente.
 
-    USE QUANDO: perguntarem "quantos casos temos", "quais casos do cliente X",
-    "nossa carteira em determinada area".
+    USE QUANDO: perguntarem "quais casos temos", "quais casos do cliente X",
+    "nossa carteira em determinada area" -- ou seja, quando precisar da LISTA de
+    processos, nao so a contagem.
 
     Agrupa as grafias do nome automaticamente. Confira com inpi_escritorio_resolver
     se o numero parecer estranho.
+
+    ⚠️ 'casos' E LISTA TRUNCADA em 'limite' (padrao 200): 'total' e o total real, mas
+    NUNCA conte len(casos) nem itere 'casos' para responder "quantos processos" ou
+    fazer ranking/agregacao -- para isso, use inpi_producao_escritorio (GROUP BY sobre
+    a base inteira, sem truncar). Contar a lista truncada e o erro mais direto de
+    subestimar um numero que este servidor pode gerar.
     """
     chave = _chave_escritorio(escritorio)
     params: list = [chave]
@@ -274,6 +286,126 @@ def inpi_carteira(escritorio: str, cliente: str | None = None,
 
 
 @mcp.tool()
+def inpi_producao_escritorio(escritorio: str, ano: int | None = None,
+                             agrupar_por: str = "cliente", top: int = 20) -> dict:
+    """Producao agregada de um escritorio sobre a base INTEIRA (GROUP BY, nunca lista
+    truncada) -- "quantos depositos", "maior cliente", "quantos da Petrobras", "foco
+    tecnologico por ano".
+
+    USE QUANDO: a pergunta for de CONTAGEM/RANKING/TENDENCIA, nao de lista de
+    processos -- para lista, use inpi_carteira. NUNCA responda essas perguntas
+    contando 'casos' de inpi_carteira: aquela lista e truncada por design, esta tool
+    agrega sobre a base inteira.
+
+    'serie_por_ano' vem SEMPRE junto (depositos por ano, contexto obrigatorio de
+    qualquer numero de volume), com 'aviso_lag_publicacao': anos recentes aparecem
+    baixos por SIGILO do pedido ainda nao vencido (art. 30 LPI), nao por queda real de
+    atividade. Auditado no plano de refino 2026-08: a Clarke Modet teve 1.918
+    depositos publicados em 2023 e so 4 em 2026 nesta base -- 2026 e o dado PUBLICADO
+    correto ate a data de corte, nao uma carteira truncada nem uma queda de atividade;
+    o agente NAO deve inventar essa segunda explicacao.
+
+    Args:
+        escritorio: nome do escritorio (agrupado pela chave curada, como em
+            inpi_carteira/inpi_escritorio_resolver).
+        ano: filtra 'ranking_clientes' ou 'foco_tecnologico_por_ano' a um
+            ano-calendario de DEPOSITO. Omita para ver o historico inteiro (menos
+            sensivel ao lag, porque soma anos maduros e recentes juntos).
+        agrupar_por: 'cliente' (ranking_clientes, quem mais depositou) ou 'ipc'
+            (foco_tecnologico_por_ano, top subclasses IPC POR ANO -- compare anos
+            maduros entre si, ex. 2023 x 2024; nao compare com 2025/2026).
+        top: quantos itens no ranking, ou por ano no foco tecnologico (1 a 100).
+    """
+    if agrupar_por not in ("cliente", "ipc"):
+        return {"erro": True, "mensagem": "agrupar_por deve ser 'cliente' ou 'ipc'."}
+
+    chave = _chave_escritorio(escritorio)
+    top = max(1, min(top, 100))
+
+    serie = _linhas(
+        """WITH alvo AS (
+             SELECT DISTINCT p.numero_inpi
+             FROM procuradores p JOIN escritorios e ON e.original = p.procurador
+             WHERE e.chave = ?
+           )
+           SELECT CAST(year(b.data_deposito) AS INT) ano,
+                  count(DISTINCT a.numero_inpi) depositos
+           FROM alvo a JOIN biblio b USING (numero_inpi)
+           WHERE b.data_deposito IS NOT NULL
+           GROUP BY 1 ORDER BY 1""",
+        [chave],
+    )
+
+    resultado: dict = {
+        "escritorio": escritorio,
+        "chave": chave,
+        "filtro": {"ano": ano, "agrupar_por": agrupar_por, "top": top},
+        "serie_por_ano": serie,
+        "aviso_lag_publicacao": aviso_lag_publicacao(),
+    }
+
+    if agrupar_por == "cliente":
+        resultado["ranking_clientes"] = _linhas(
+            """WITH alvo AS (
+                 SELECT DISTINCT p.numero_inpi
+                 FROM procuradores p JOIN escritorios e ON e.original = p.procurador
+                 WHERE e.chave = ?
+               )
+               SELECT t.chave titular_chave, arg_max(dp.depositante, 1) titular,
+                      count(DISTINCT a.numero_inpi) processos
+               FROM alvo a
+               JOIN depositantes dp USING (numero_inpi)
+               JOIN titulares t ON t.original = dp.depositante
+               LEFT JOIN biblio b USING (numero_inpi)
+               WHERE (CAST(? AS INT) IS NULL OR year(b.data_deposito) = CAST(? AS INT))
+               GROUP BY t.chave ORDER BY processos DESC LIMIT ?""",
+            [chave, ano, ano, top],
+        )
+        if ano is not None:
+            resultado["nota_ranking"] = (
+                f"Filtrado a depositos de {ano}. Se {ano} for o ano corrente ou o "
+                "anterior, o numero de cada cliente e PARCIAL por sigilo de "
+                "publicacao -- ver 'aviso_lag_publicacao'. Nunca apresente como total "
+                "definitivo/final do ano."
+            )
+    else:
+        resultado["foco_tecnologico_por_ano"] = _linhas(
+            """WITH alvo AS (
+                 SELECT DISTINCT p.numero_inpi
+                 FROM procuradores p JOIN escritorios e ON e.original = p.procurador
+                 WHERE e.chave = ?
+               ), contagem AS (
+                 SELECT CAST(year(b.data_deposito) AS INT) ano,
+                        substr(i.simbolo, 1, 4) subclasse,
+                        count(DISTINCT a.numero_inpi) processos
+                 FROM alvo a
+                 JOIN ipc i USING (numero_inpi)
+                 JOIN biblio b USING (numero_inpi)
+                 WHERE i.simbolo IS NOT NULL AND length(i.simbolo) >= 4
+                   AND b.data_deposito IS NOT NULL
+                   AND (CAST(? AS INT) IS NULL OR year(b.data_deposito) = CAST(? AS INT))
+                 GROUP BY 1, 2
+               ), ranqueado AS (
+                 SELECT ano, subclasse, processos,
+                        row_number() OVER (PARTITION BY ano ORDER BY processos DESC) rn
+                 FROM contagem
+               )
+               SELECT ano, subclasse, processos FROM ranqueado
+               WHERE rn <= ? ORDER BY ano, processos DESC""",
+            [chave, ano, ano, top],
+        )
+        resultado["nota_foco"] = (
+            "Top subclasses IPC POR ANO de deposito (uma tabela ano x subclasse, nao "
+            "agregado no periodo inteiro): compare anos MADUROS entre si (ex.: 2023 x "
+            "2024). Anos recentes (corrente e anterior) tem poucos processos "
+            "publicados ainda e NAO sao comparaveis com anos maduros -- ver "
+            "'aviso_lag_publicacao'."
+        )
+
+    return resultado
+
+
+@mcp.tool()
 def inpi_mercado(ipc: str | None = None, desde: str | None = None,
                  top: int = 20) -> dict:
     """Ranking de escritorios por volume de processos. Inteligencia competitiva.
@@ -309,7 +441,7 @@ def inpi_mercado(ipc: str | None = None, desde: str | None = None,
     total = sum(l["processos"] for l in linhas)
     for l in linhas:
         l["participacao_no_top"] = round(l["processos"] / total * 100, 1) if total else 0
-    return {
+    resultado = {
         "filtro": {"ipc": ipc, "desde": desde},
         "ranking": linhas,
         "nota": (
@@ -327,6 +459,9 @@ def inpi_mercado(ipc: str | None = None, desde: str | None = None,
             "inpi/referencias/escritorios-apelidos.csv."
         ),
     }
+    if desde:
+        resultado["aviso_lag_publicacao"] = aviso_lag_publicacao()
+    return resultado
 
 
 @mcp.tool()
@@ -482,6 +617,7 @@ def inpi_serie_mercado(escritorios: list[str] | None = None, ipc: str | None = N
             "guarda a representacao vigente, nao a da epoca. Para grandes carteiras "
             "isso desloca volume dos anos antigos para quem representa hoje."
         ),
+        "aviso_lag_publicacao": aviso_lag_publicacao(),
     }
 
 

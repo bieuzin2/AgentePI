@@ -40,6 +40,13 @@ O código corrigido não vale nada enquanto não chega ao agente. Passos:
    - A vigilância de domingo (`vigilancia/executar.py`) já sincroniza **dados** ao MotherDuck; o
      **código** depende de push manual ao Render. Deixar isso explícito no checklist para não
      confundir "dados atualizados" com "código atualizado".
+   - **Editou `inpi/referencias/escritorios-apelidos.csv`?** O CSV sozinho não muda nada — a
+     tabela `escritorios` só reflete o apelido novo depois de `python inpi/ingest.py` (rebuild
+     completo local, ~2-3 min) **e** sync MotherDuck. Aconteceu de verdade: o commit que
+     endossou `RAFAEL CORDOVILLE FREIRE → CLARKE MODET` ficou 346 processos fora da Clarke por
+     dias porque o CSV foi commitado sem reingestão — o agente nunca citou o vínculo, e ninguém
+     recebeu erro nenhum (curadoria correta, banco desatualizado, silêncio). Adicione este passo
+     ao checklist toda vez que revisar `escritorios-apelidos.csv` ou `clientes-clarke.csv`.
 
 **Verificação F0**: contra o remoto, `inpi_escritorio_resolver("Clarke Modet")` traz
 `composicao`; `epo_busca("ta=(covid)")` retorna total>0; `inpi_exigencias_escritorio` existe.

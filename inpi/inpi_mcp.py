@@ -58,6 +58,7 @@ from inpi.mercado import (  # noqa: F401
     _chave_escritorio,
     inpi_escritorio_resolver,
     inpi_carteira,
+    inpi_producao_escritorio,
     inpi_exigencias_escritorio,
     inpi_mercado,
     inpi_prospeccao,
@@ -138,40 +139,57 @@ def tarefa_concluir(id: int) -> dict:
 
 @mcp.tool()
 def inpi_reivindicacoes(numero: str) -> dict:
-    """Quadro reivindicatorio de um pedido BR, via texto integral (Google
-    Patents / familia INPADOC no EPO) -- com fallback pro PDF oficial salvo
-    manualmente quando nenhuma fonte de texto integral tem o documento.
+    """Quadro reivindicatorio de um documento BR, US, EP ou WO, via texto
+    integral (Google Patents / EPO OPS, conforme a jurisdicao) -- com
+    fallback pro PDF oficial salvo manualmente quando o documento e BR e
+    nenhuma fonte de texto integral o tem.
 
-    USE QUANDO: for montar um claim chart de um documento BR (a skill
-    analista-patentes-inpi ja suporta US/EP; isto destrava o BR).
+    USE QUANDO: for montar um claim chart. Cobre as 4 jurisdicoes que mais
+    aparecem aqui -- BR, US, EP, WO -- pelo mesmo nome de tool (nao troque
+    para outra so por ser US/EP: o roteamento por jurisdicao e automatico,
+    pelo prefixo do numero).
 
-    FONTE (nesta ordem):
-    1. Google Patents -- serve o texto integral que o INPI/EPO nao tem para
-       pedidos depositados so no Brasil (sem passagem PCT/WO). Sem sessao, sem
-       captcha, com cache local (ver enriquecimento/).
-    2. Familia INPADOC + epo_texto_integral -- quando o Google Patents nao
-       acha o documento, tenta o texto integral OFICIAL de um membro WO/EP da
-       mesma familia (API do EPO OPS).
-    3. PDF salvo manualmente em inpi/data/pdfs/{numero_normalizado}.pdf --
-       ultimo recurso. NAO HA download automatico confiavel do portal do INPI
-       (busca.inpi.gov.br/pePI e stateful, sem endpoint publico estavel por
-       numero -- ver docs/aceite/F4-pdf-claimchart.md).
+    FONTE, por jurisdicao (detectada pelo prefixo do numero normalizado):
+    - US: Google Patents (kinds B1/B2/A1/A2). Sem fallback automatico aqui --
+      se faltar, tente a tool MCP do USPTO (uspto.ppubs_get_full_document,
+      texto integral oficial) antes de declarar ausencia.
+    - EP/WO: epo_texto_integral (API oficial do EPO OPS, PRIMARIA para essas
+      duas jurisdicoes) -- fallback Google Patents (kinds B1/A1/A2/A3).
+    - BR (padrao, sem prefixo): Google Patents (kinds BR) -- fallback familia
+      INPADOC + epo_texto_integral de um membro WO/EP -- fallback final PDF
+      salvo manualmente em inpi/data/pdfs/{numero_normalizado}.pdf (unico
+      caso onde ha PDF; US/EP/WO nao passam por esse fallback). NAO HA
+      download automatico confiavel do portal do INPI (busca.inpi.gov.br/pePI
+      e stateful, sem endpoint publico estavel por numero -- ver
+      docs/aceite/F4-pdf-claimchart.md). BR-only sem familia PCT/WO/EP
+      publicada pode nao ter texto integral em NENHUMA fonte automatica --
+      isso e limite de cobertura da fonte, nao erro desta tool; so o PDF
+      manual resolve.
 
-    Aceita os mesmos formatos de numero que inpi_processo.
+    Aceita os mesmos formatos de numero que inpi_processo (BR) ou o numero de
+    publicacao com prefixo do pais (US/EP/WO, ex.: 'US6421675B1', 'EP1234567').
 
-    LEIA 'status'/'mensagem' (fontes 1-2) ou 'aviso'/'secoes_ausentes' (fonte
-    3, PDF): nenhuma fonte encontrada vira declaracao de cobertura, nunca erro
-    silencioso. Numeracao de reivindicacao e heuristica -- confira contra o
-    documento original antes de citar em parecer.
+    LEIA 'status'/'mensagem' (fontes de texto integral) ou 'aviso'/
+    'secoes_ausentes' (fonte PDF, so BR): 'sem_texto' com mensagem que cita
+    'cobertura' e ausencia da fonte, nao falha -- nunca declare "documento nao
+    tem reivindicacoes" so porque a busca voltou vazia. Numeracao de
+    reivindicacao e heuristica -- confira contra o documento original antes de
+    citar em parecer.
     """
     from inpi.consulta import normaliza_numero
 
     num = normaliza_numero(numero)
 
     from enriquecimento import harness
+    from enriquecimento.fontes.google_patents import detectar_jurisdicao
 
     enriquecido = harness.enriquecer_claims(num)
     if enriquecido["status"] == "ok":
+        return enriquecido
+
+    if detectar_jurisdicao(num) != "BR":
+        # Fallback de PDF salvo manualmente so existe para BR (inpi/pdf_inpi.py
+        # espera numero de processo INPI, nao publicacao US/EP/WO).
         return enriquecido
 
     from inpi import pdf_inpi
