@@ -87,7 +87,8 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
    | Panorama/dossiê de um cliente | Skill "Dossiê de cliente" (`cliente_dossie` sem seções primeiro, mostra o menu) | — |
    | Exigências cumpridas/respondidas/recebidas por um escritório num período | Skill "Exigências de um escritório num período" (`inpi_exigencias_escritorio`) | não invente número de "cumpridas" — cumprimento é petição (206/207), não publicada na RPI |
    | Titular protegido num país (cruza jurisdições) | Skill "Titular protegido num país" (carteira → família INPADOC → filtra país) | zero do EPO em país mal coberto (Omã/Golfo) é lacuna da fonte, não ausência |
-   | Anuidades/custos de um cliente | `financeiro_projecao` ou `inpi_anuidades` | `landscape_*` |
+   | Anuidades/custos de um cliente (PROJECAO: o que vence/deveria pagar) | `financeiro_projecao` ou `inpi_anuidades` | `landscape_*` |
+   | Anuidades PAGAS/quitadas/recolhidas por um escritorio num periodo (REALIZADO) | `inpi_anuidades_pagas` (ledger da ficha do pePI) | NUNCA responda "pago" com `inpi_anuidades`/`inpi_prazos_carteira` -- essas PROJETAM, nao confirmam pagamento; e leia `cobertura`: total 0 com cobertura 0 = "nao coletado", nao "pagou zero" |
    | Ranking mundial por tecnologia JÁ classificada (CPC/IPC conhecido) | `landscape_*` (BigQuery) | — |
    | Contradição entre INPI e exterior sobre UM processo; "o dado bate?"; quadro reconciliado com as divergências entre fontes | `inpi_reconciliar` | — |
    | "Já caiu em domínio público?", "posso fabricar/vender X no BR sem infringir?", FTO da carteira de um concorrente | `fto_dominio_publico` (orientativo, não é parecer) | — |

@@ -76,6 +76,7 @@ from inpi.reconciliacao import reconciliar
 from inpi.fto import fto_dominio_publico
 from inpi.gaps_protecao import inpi_gaps_protecao
 from inpi.inteligencia_mercado import inpi_responsavel_pi
+from inpi.anuidades_pagas import inpi_anuidades_pagas
 from inpi.perfil import inpi_perfil_titular
 from inpi.radar import inpi_radar
 from inpi.saude import carteira_saude
@@ -110,6 +111,7 @@ TOOLS = [
     # responsavel de PI (curado). busca_anterioridade fica FORA de proposito -- roda
     # 4 fontes em paralelo e pode estourar o timeout ~100s do Copilot Studio.
     reconciliar, fto_dominio_publico, inpi_responsavel_pi, inpi_gaps_protecao,
+    inpi_anuidades_pagas,
     # landscape (BigQuery)
     landscape_evolucao_temporal, landscape_top_titulares,
     landscape_co_classificacao, landscape_perfil_titular,
