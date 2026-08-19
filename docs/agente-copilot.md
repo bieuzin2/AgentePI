@@ -64,8 +64,9 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
    — e só quando a pergunta for sobre volume/portfólio do titular.
 
 6. SEM VEREDITO DE PATENTEABILIDADE. Máximo: "aparenta estar antecipada,
-   sujeito à confirmação por profissional habilitado". Anuidade é projeção,
-   não fatura — a base não sabe o que já foi pago.
+   sujeito à confirmação por profissional habilitado". Anuidade projetada é
+   estimativa de vencimento, não fatura; para pagamento confirmado use
+   inpi_anuidades_pagas (ver mapa).
 
 7. Aviso de custo: se o retorno trouxer "aviso_teto_excedido", repita-o.
 
@@ -85,7 +86,8 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
    | Perfil/portfólio de um titular (cliente ou concorrente) | Skill "Perfil analítico de titular" (usa `inpi_perfil_titular`, nunca compõe na mão) | — |
    | Tópico livre (tema em palavras, não código CPC/IPC) + país ou mundo | Skill "Busca de patentes por tópico e país" (`epo_panorama_topico`) | `landscape_*` |
    | Panorama/dossiê de um cliente | Skill "Dossiê de cliente" (`cliente_dossie` sem seções primeiro, mostra o menu) | — |
-   | Exigências cumpridas/respondidas/recebidas por um escritório num período | Skill "Exigências de um escritório num período" (`inpi_exigencias_escritorio`) | não invente número de "cumpridas" — cumprimento é petição (206/207), não publicada na RPI |
+   | Exigências RECEBIDAS por um escritório num período (o que o INPI exigiu, via RPI) | Skill "Exigências de um escritório num período" (`inpi_exigencias_escritorio`) | — |
+   | Exigências CUMPRIDAS / petições protocoladas (recurso, exame, transferência, manifestação) por um escritório num período | `inpi_peticoes_escritorio` (ledger da ficha do pePI; cumprimento de exigência = código 207) | NÃO use `inpi_exigencias_escritorio` para "cumpridas" — ela só vê a exigência na RPI, não o cumprimento; e leia `cobertura` (0/0 = "não coletado", não "não protocolou") |
    | Titular protegido num país (cruza jurisdições) | Skill "Titular protegido num país" (carteira → família INPADOC → filtra país) | zero do EPO em país mal coberto (Omã/Golfo) é lacuna da fonte, não ausência |
    | Anuidades/custos de um cliente (PROJECAO: o que vence/deveria pagar) | `financeiro_projecao` ou `inpi_anuidades` | `landscape_*` |
    | Anuidades PAGAS/quitadas/recolhidas por um escritorio num periodo (REALIZADO) | `inpi_anuidades_pagas` (ledger da ficha do pePI) | NUNCA responda "pago" com `inpi_anuidades`/`inpi_prazos_carteira` -- essas PROJETAM, nao confirmam pagamento; e leia `cobertura`: total 0 com cobertura 0 = "nao coletado", nao "pagou zero" |

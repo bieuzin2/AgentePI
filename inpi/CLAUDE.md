@@ -24,6 +24,9 @@ dados abertos do INPI. É o **hub** do projeto: cruza com EPO por import Python 
   `inpi_prazo_fase_nacional` (marco PCT 30/31m). Regras em `jurisdicoes.py`.
 - Mercado/escritórios: `inpi_carteira`, `inpi_prospeccao`, `inpi_mercado`, `inpi_producao_escritorio`,
   `inpi_conflitos_identidade`, etc. (procuradores/escritorios/titulares/identidade_escritorio).
+- Ledger real do pePI (por escritório/período; tabelas `ficha_*`; declaram cobertura da coleta):
+  `inpi_anuidades_pagas` (anuidade PAGA, `anuidades_pagas.py`), `inpi_peticoes_escritorio`
+  (petição protocolada, inclui cumprimento de exigência cód. 207, `peticoes_escritorio.py`).
 - Cruzam EPO: `carteira_saude`, `financeiro_projecao`, `cliente_dossie`, `carteira_oposicoes_ep`,
   `carteira_auditoria_vigencia`, `fila_semana`.
 - Refinamento (novas): `inpi_reconciliar` (`reconciliacao.py` — cruza INPI×EPO×enriquecimento e

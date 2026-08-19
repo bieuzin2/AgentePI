@@ -90,6 +90,7 @@ from inpi.oposicoes import carteira_oposicoes_ep  # noqa: F401
 # nome agent-facing, mantendo o modulo livre de dependencia do servidor.
 from inpi.inteligencia_mercado import inpi_responsavel_pi  # noqa: F401
 from inpi.anuidades_pagas import inpi_anuidades_pagas  # noqa: F401
+from inpi.peticoes_escritorio import inpi_peticoes_escritorio  # noqa: F401
 from inpi.reconciliacao import reconciliar as _reconciliar
 from inpi.fto import fto_dominio_publico as _fto_dominio_publico
 from inpi.gaps_protecao import inpi_gaps_protecao as _inpi_gaps_protecao
