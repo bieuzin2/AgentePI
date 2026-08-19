@@ -337,7 +337,6 @@ def _mescla_ficha_extras(con) -> None:
     """
     if not FICHA_EXTRAS.exists():
         return
-    import json as _json
     t0 = time.time()
 
     # Carrega CSV bruto em memoria uma vez -- 609MB CSV -> ~200MB Python (strings)
@@ -367,57 +366,43 @@ def _mescla_ficha_extras(con) -> None:
     n = con.execute("SELECT count(*) FROM ficha_extras").fetchone()[0]
     print(f"  ficha_extras   {n:>12,} linhas   {time.time() - t0:5.1f}s", flush=True)
 
-    # ficha_peticoes: expande peticoes_json -> uma linha por peticao
+    # ficha_peticoes/ficha_anuidades: expande *_json -> uma linha por item, via
+    # UNNEST(from_json(...)) nativo do DuckDB (vetorizado). A versao anterior fazia
+    # json.loads() + executemany() linha a linha em Python: para ~1,5M peticoes e
+    # ~1,4M anuidades isso levou MAIS DE 6 HORAS num ingest real (medido em producao,
+    # 2026-08-19) contra 15s da forma vetorizada -- mesma saida, sem loop Python.
+    # json_valid() descarta silenciosamente entradas malformadas (from_json() lanca
+    # excecao e derruba a query inteira se UMA linha for JSON invalido); no dataset
+    # real a contagem de invalidas foi 0, mas o guard fica pelo mesmo motivo do
+    # try/except que substituiu -- fonte e coleta externa, nao dado confiavel 100%.
     t1 = time.time()
-    rows_pet = con.execute(
-        "SELECT numero_inpi, peticoes_json FROM _fe_raw WHERE peticoes_json NOT IN ('', '[]')"
-    ).fetchall()
-    peticoes = []
-    for numero_inpi, pj in rows_pet:
-        try:
-            for p in _json.loads(pj):
-                peticoes.append((
-                    numero_inpi,
-                    p.get("codigo"), p.get("descricao"), p.get("banco"),
-                    p.get("valor"), p.get("protocolo"), p.get("data_protocolo"),
-                ))
-        except Exception:
-            pass
     con.execute("""
-      CREATE OR REPLACE TABLE ficha_peticoes (
-        numero_inpi VARCHAR, codigo VARCHAR, descricao VARCHAR,
-        banco VARCHAR, valor VARCHAR, protocolo VARCHAR, data_protocolo VARCHAR
-      )
+      CREATE TABLE ficha_peticoes AS
+      SELECT r.numero_inpi, p.codigo, p.descricao, p.banco, p.valor,
+             p.protocolo, p.data_protocolo
+      FROM _fe_raw r,
+           UNNEST(from_json(r.peticoes_json,
+             '["STRUCT(codigo VARCHAR, descricao VARCHAR, banco VARCHAR, '
+             'valor VARCHAR, protocolo VARCHAR, data_protocolo VARCHAR)"]'
+           )) AS tt(p)
+      WHERE r.peticoes_json NOT IN ('', '[]') AND json_valid(r.peticoes_json)
     """)
-    if peticoes:
-        con.executemany("INSERT INTO ficha_peticoes VALUES (?,?,?,?,?,?,?)", peticoes)
-    print(f"  ficha_peticoes {len(peticoes):>12,} linhas   {time.time() - t1:5.1f}s", flush=True)
+    n_pet = con.execute("SELECT count(*) FROM ficha_peticoes").fetchone()[0]
+    print(f"  ficha_peticoes {n_pet:>12,} linhas   {time.time() - t1:5.1f}s", flush=True)
 
-    # ficha_anuidades: expande anuidades_json -> uma linha por anuidade
     t2 = time.time()
-    rows_anu = con.execute(
-        "SELECT numero_inpi, anuidades_json FROM _fe_raw WHERE anuidades_json NOT IN ('', '[]')"
-    ).fetchall()
-    anuidades = []
-    for numero_inpi, aj in rows_anu:
-        try:
-            for a in _json.loads(aj):
-                anuidades.append((
-                    numero_inpi,
-                    a.get("numero"), a.get("status"), a.get("gru"),
-                    a.get("valor"), a.get("data_pagamento"),
-                ))
-        except Exception:
-            pass
     con.execute("""
-      CREATE OR REPLACE TABLE ficha_anuidades (
-        numero_inpi VARCHAR, numero VARCHAR, status VARCHAR,
-        gru VARCHAR, valor VARCHAR, data_pagamento VARCHAR
-      )
+      CREATE TABLE ficha_anuidades AS
+      SELECT r.numero_inpi, a.numero, a.status, a.gru, a.valor, a.data_pagamento
+      FROM _fe_raw r,
+           UNNEST(from_json(r.anuidades_json,
+             '["STRUCT(numero VARCHAR, status VARCHAR, gru VARCHAR, '
+             'valor VARCHAR, data_pagamento VARCHAR)"]'
+           )) AS tt(a)
+      WHERE r.anuidades_json NOT IN ('', '[]') AND json_valid(r.anuidades_json)
     """)
-    if anuidades:
-        con.executemany("INSERT INTO ficha_anuidades VALUES (?,?,?,?,?,?)", anuidades)
-    print(f"  ficha_anuidades{len(anuidades):>12,} linhas   {time.time() - t2:5.1f}s", flush=True)
+    n_anu = con.execute("SELECT count(*) FROM ficha_anuidades").fetchone()[0]
+    print(f"  ficha_anuidades{n_anu:>12,} linhas   {time.time() - t2:5.1f}s", flush=True)
     con.execute("DROP TABLE _fe_raw")
 
 
