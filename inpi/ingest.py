@@ -27,6 +27,7 @@ RAIZ = Path(__file__).resolve().parent
 BRUTO = RAIZ / "data" / "raw"
 BANCO = RAIZ / "data" / "inpi.duckdb"
 PROCURADORES_SIGILO = RAIZ / "referencias" / "procuradores-sigilo.csv"
+FICHA_EXTRAS = RAIZ / "referencias" / "ficha-extras.csv"
 
 # nome_da_tabela -> arquivo CSV
 TABELAS = {
@@ -321,6 +322,105 @@ def _mescla_procuradores_sigilo(con) -> None:
           f"{time.time() - t0:5.1f}s", flush=True)
 
 
+def _mescla_ficha_extras(con) -> None:
+    """Cria 3 tabelas normalizadas a partir de ficha-extras.csv:
+
+      ficha_extras    -- uma linha por pedido: numero_inpi, cpc, escritorio,
+                         fonte, coletado_em. Sem JSON inline, sem link_documento
+                         (100% nulo na coleta). Leve, indexavel.
+      ficha_peticoes  -- uma linha por peticao (lista expandida de peticoes_json).
+      ficha_anuidades -- uma linha por anuidade (lista expandida de anuidades_json).
+
+    Nenhuma informacao e perdida: os JSONs sao apenas desnormalizados em linhas
+    com numero_inpi como FK. Tamanho no DuckDB e ~10x menor que o CSV bruto
+    porque columnar storage comprime repeticoes de escritorio/fonte/data.
+    """
+    if not FICHA_EXTRAS.exists():
+        return
+    import json as _json
+    t0 = time.time()
+
+    # Carrega CSV bruto em memoria uma vez -- 609MB CSV -> ~200MB Python (strings)
+    csv_path = FICHA_EXTRAS.as_posix()
+    con.execute(f"""
+      CREATE OR REPLACE TEMP TABLE _fe_raw AS
+      SELECT f.numero_inpi, f.cpc, f.peticoes_json, f.anuidades_json,
+             f.escritorio_canonico, f.fonte, f.coletado_em
+      FROM read_csv('{csv_path}', header=true, delim=',', quote='"', escape='"',
+                    columns={{
+                      'numero_inpi': 'VARCHAR', 'cpc': 'VARCHAR',
+                      'peticoes_json': 'VARCHAR', 'anuidades_json': 'VARCHAR',
+                      'link_documento': 'VARCHAR', 'escritorio_canonico': 'VARCHAR',
+                      'fonte': 'VARCHAR', 'coletado_em': 'VARCHAR'
+                    }}) f
+      JOIN biblio b USING (numero_inpi)
+    """)
+
+    # ficha_extras: tabela principal, uma linha por pedido
+    con.execute("""
+      CREATE OR REPLACE TABLE ficha_extras AS
+      SELECT numero_inpi,
+             CASE WHEN cpc = '' THEN NULL ELSE cpc END AS cpc,
+             escritorio_canonico, fonte, coletado_em
+      FROM _fe_raw
+    """)
+    n = con.execute("SELECT count(*) FROM ficha_extras").fetchone()[0]
+    print(f"  ficha_extras   {n:>12,} linhas   {time.time() - t0:5.1f}s", flush=True)
+
+    # ficha_peticoes: expande peticoes_json -> uma linha por peticao
+    t1 = time.time()
+    rows_pet = con.execute(
+        "SELECT numero_inpi, peticoes_json FROM _fe_raw WHERE peticoes_json NOT IN ('', '[]')"
+    ).fetchall()
+    peticoes = []
+    for numero_inpi, pj in rows_pet:
+        try:
+            for p in _json.loads(pj):
+                peticoes.append((
+                    numero_inpi,
+                    p.get("codigo"), p.get("descricao"), p.get("banco"),
+                    p.get("valor"), p.get("protocolo"), p.get("data_protocolo"),
+                ))
+        except Exception:
+            pass
+    con.execute("""
+      CREATE OR REPLACE TABLE ficha_peticoes (
+        numero_inpi VARCHAR, codigo VARCHAR, descricao VARCHAR,
+        banco VARCHAR, valor VARCHAR, protocolo VARCHAR, data_protocolo VARCHAR
+      )
+    """)
+    if peticoes:
+        con.executemany("INSERT INTO ficha_peticoes VALUES (?,?,?,?,?,?,?)", peticoes)
+    print(f"  ficha_peticoes {len(peticoes):>12,} linhas   {time.time() - t1:5.1f}s", flush=True)
+
+    # ficha_anuidades: expande anuidades_json -> uma linha por anuidade
+    t2 = time.time()
+    rows_anu = con.execute(
+        "SELECT numero_inpi, anuidades_json FROM _fe_raw WHERE anuidades_json NOT IN ('', '[]')"
+    ).fetchall()
+    anuidades = []
+    for numero_inpi, aj in rows_anu:
+        try:
+            for a in _json.loads(aj):
+                anuidades.append((
+                    numero_inpi,
+                    a.get("numero"), a.get("status"), a.get("gru"),
+                    a.get("valor"), a.get("data_pagamento"),
+                ))
+        except Exception:
+            pass
+    con.execute("""
+      CREATE OR REPLACE TABLE ficha_anuidades (
+        numero_inpi VARCHAR, numero VARCHAR, status VARCHAR,
+        gru VARCHAR, valor VARCHAR, data_pagamento VARCHAR
+      )
+    """)
+    if anuidades:
+        con.executemany("INSERT INTO ficha_anuidades VALUES (?,?,?,?,?,?)", anuidades)
+    print(f"  ficha_anuidades{len(anuidades):>12,} linhas   {time.time() - t2:5.1f}s", flush=True)
+    con.execute("DROP TABLE _fe_raw")
+
+
 def main() -> int:
     if "--baixar" in sys.argv:
         print(f"Baixando de {BASE_URL}", flush=True)
@@ -366,6 +466,7 @@ def main() -> int:
     # (construcao de ART sobre VARCHAR); sem eles, termina em ~2 min e as consultas do
     # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
     _mescla_procuradores_sigilo(con)
+    _mescla_ficha_extras(con)
     _materializa_nomes(con)
     _materializa_titulares(con)
     _vota_identidade(con)

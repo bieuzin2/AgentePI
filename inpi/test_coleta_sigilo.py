@@ -30,8 +30,16 @@ def test_formatar_numero_busca_formato_unificado():
     assert m._formatar_numero_busca("102026015044") == "BR 10 2026 015044"
 
 
-def test_formatar_numero_busca_formato_antigo_devolve_none():
-    assert m._formatar_numero_busca("PI0903314") is None
+def test_formatar_numero_busca_formato_antigo_devolve_cru():
+    """Confirmado ao vivo em 2026-08-11: o pePI aceita o numero antigo como
+    esta, sem transformacao (PI0413188 e C10305735 testados)."""
+    assert m._formatar_numero_busca("PI0903314") == "PI0903314"
+    assert m._formatar_numero_busca("C10305735") == "C10305735"
+
+
+def test_formatar_numero_busca_lixo_devolve_none():
+    assert m._formatar_numero_busca("!!!") is None
+    assert m._formatar_numero_busca("") is None
 
 
 class _RespostaFalsa:
@@ -77,13 +85,15 @@ def test_varrer_e_registrar_paralelo_nao_corrompe_csv_sob_concorrencia(tmp_path,
     con_teste.execute("CREATE TABLE procuradores (numero_inpi VARCHAR)")
     monkeypatch.setattr(m, "con", lambda: con_teste)
     monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
 
-    def _procurador_falso(self, numero_inpi):
+    def _ficha_html_falsa(self, numero_inpi):
         i = int(numero_inpi[-5:])
-        return "CLARKE MODET" if i % 2 == 0 else "OUTRO ESCRITORIO LTDA"
+        proc = "CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA." if i % 2 == 0 else "OUTRO ESCRITORIO LTDA"
+        return _HTML_FICHA.replace("CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA.", proc)
 
     monkeypatch.setattr(m._Trabalhador, "sessao_anonima", lambda self: True)
-    monkeypatch.setattr(m._Trabalhador, "procurador_na_ficha", _procurador_falso)
+    monkeypatch.setattr(m._Trabalhador, "ficha_html", _ficha_html_falsa)
 
     resumo = m.varrer_e_registrar_paralelo(numeros, "CLARKE MODET", paralelismo=5)
 
@@ -92,6 +102,39 @@ def test_varrer_e_registrar_paralelo_nao_corrompe_csv_sob_concorrencia(tmp_path,
     linhas = m._le_csv()
     assert len(linhas) == 63
     assert len({l["numero_inpi"] for l in linhas}) == 63  # sem duplicata
+
+
+def test_varrer_e_registrar_geral_paralelo_grava_qualquer_escritorio(tmp_path, monkeypatch):
+    """Sem alvo: grava o procurador que aparecer, resolvido pela chave
+    normalizada -- Clarke, concorrente, qualquer um."""
+    numeros = [f"1020260{i:05d}" for i in range(10)]
+
+    con_teste = duckdb.connect(":memory:")
+    con_teste.execute("CREATE TABLE biblio (numero_inpi VARCHAR)")
+    con_teste.executemany("INSERT INTO biblio VALUES (?)", [[n] for n in numeros])
+    con_teste.execute("CREATE TABLE procuradores (numero_inpi VARCHAR)")
+    monkeypatch.setattr(m, "con", lambda: con_teste)
+    monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
+
+    def _ficha_html_falsa(self, numero_inpi):
+        i = int(numero_inpi[-5:])
+        if i % 3 == 0:
+            return None  # falha de fetch -- circuit breaker conta isso
+        procurador = "CLARKE MODET" if i % 2 == 0 else "CONCORRENTE XYZ LTDA"
+        return _HTML_FICHA.replace("CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA.", procurador)
+
+    monkeypatch.setattr(m._Trabalhador, "sessao_anonima", lambda self: True)
+    monkeypatch.setattr(m._Trabalhador, "ficha_html", _ficha_html_falsa)
+
+    resumo = m.varrer_e_registrar_geral_paralelo(numeros, paralelismo=3)
+
+    assert "outro_escritorio" not in resumo
+    linhas = {l["numero_inpi"]: l["escritorio_canonico"] for l in m._le_csv()}
+    assert linhas["102026000002"] == "CLARKE MODET"
+    assert linhas["102026000001"] == "CONCORRENTE XYZ"  # normalizar() tira o sufixo LTDA
+    assert resumo["registrados"] == len(linhas)
+    assert resumo["sem_procurador_ou_nao_encontrado"] == sum(1 for i in range(10) if i % 3 == 0)
 
 
 def test_procurador_na_ficha_url_de_detalhe_e_unica_por_pedido(monkeypatch):
@@ -136,6 +179,7 @@ def _con_teste(monkeypatch):
 
 def test_registrar_grava_numero_valido_e_sem_procurador(tmp_path, monkeypatch, _con_teste):
     monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
 
     ok = m.registrar("102020000001", "CLARKE MODET", "CLARKE MODET", "pePI", "2026-08-11")
 
@@ -147,6 +191,7 @@ def test_registrar_grava_numero_valido_e_sem_procurador(tmp_path, monkeypatch, _
 
 def test_registrar_recusa_numero_que_nao_existe(tmp_path, monkeypatch, _con_teste):
     monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
 
     ok = m.registrar("999999999999", "CLARKE MODET", "CLARKE MODET", "pePI", "2026-08-11")
 
@@ -156,6 +201,7 @@ def test_registrar_recusa_numero_que_nao_existe(tmp_path, monkeypatch, _con_test
 
 def test_registrar_recusa_numero_que_ja_tem_procurador_oficial(tmp_path, monkeypatch, _con_teste):
     monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
 
     ok = m.registrar("102020000002", "CLARKE MODET", "CLARKE MODET", "pePI", "2026-08-11")
 
@@ -165,6 +211,7 @@ def test_registrar_recusa_numero_que_ja_tem_procurador_oficial(tmp_path, monkeyp
 
 def test_registrar_recusa_duplicata_ja_coletada(tmp_path, monkeypatch, _con_teste):
     monkeypatch.setattr(m, "CSV_SIGILO", tmp_path / "procuradores-sigilo.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
     m.registrar("102020000001", "CLARKE MODET", "CLARKE MODET", "pePI", "2026-08-11")
 
     ok = m.registrar("102020000001", "CLARKE MODET", "CLARKE MODET", "pePI", "2026-08-11")

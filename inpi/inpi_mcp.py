@@ -85,6 +85,18 @@ from inpi.dossie import cliente_dossie  # noqa: F401
 from inpi.fila import fila_semana  # noqa: F401
 from inpi.oposicoes import carteira_oposicoes_ep  # noqa: F401
 
+# Tools novas (refinamento): responsavel_pi ja e decorada no proprio modulo (basta
+# importar para registrar). reconciliar/fto sao logica pura -- registramos aqui com
+# nome agent-facing, mantendo o modulo livre de dependencia do servidor.
+from inpi.inteligencia_mercado import inpi_responsavel_pi  # noqa: F401
+from inpi.reconciliacao import reconciliar as _reconciliar
+from inpi.fto import fto_dominio_publico as _fto_dominio_publico
+from inpi.gaps_protecao import inpi_gaps_protecao as _inpi_gaps_protecao
+
+mcp.tool(name="inpi_reconciliar")(_reconciliar)
+mcp.tool(name="fto_dominio_publico")(_fto_dominio_publico)
+mcp.tool(name="inpi_gaps_protecao")(_inpi_gaps_protecao)
+
 RAIZ = Path(__file__).resolve().parent
 
 

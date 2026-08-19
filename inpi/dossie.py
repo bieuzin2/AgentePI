@@ -36,6 +36,11 @@ SECOES = {
         "MAIS LENTO (consulta o EPO, respeita quota): vigencia no exterior por "
         "pais -- inclui Acordo de Londres -- e oposicoes/janelas do art. 99 nos EPs."
     ),
+    "gaps_protecao_pct": (
+        "MAIS LENTO (familia INPADOC + landscape): pedidos PCT perto do prazo de "
+        "fase nacional (art. 22/39) e os paises importantes onde o titular ainda "
+        "NAO protegeu -- oportunidade proativa de negocio."
+    ),
 }
 
 
@@ -94,6 +99,9 @@ def _rodar_secao(cliente: str, nome: str, meses_anuidades: int) -> dict:
             "vigencia": _secao(carteira_auditoria_vigencia, cliente),
             "oposicoes": _secao(carteira_oposicoes_ep, cliente),
         }
+    if nome == "gaps_protecao_pct":
+        from inpi.gaps_protecao import inpi_gaps_protecao
+        return _secao(inpi_gaps_protecao, cliente)
     return {"erro": f"secao desconhecida: {nome!r}. Validas: {sorted(SECOES)}"}
 
 

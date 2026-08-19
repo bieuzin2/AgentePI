@@ -52,7 +52,7 @@ def test_sem_secoes_devolve_so_o_menu():
     carregar.assert_not_called()
     assert r["menu"] is True
     assert set(r["secoes_disponiveis"]) == {
-        "processos_e_anuidades", "saude", "exterior_epo"}
+        "processos_e_anuidades", "saude", "exterior_epo", "gaps_protecao_pct"}
     assert r["normalizacao"]["nivel"] == "curada"
 
 

@@ -9,8 +9,14 @@ inpi/data/
 epo/data/
 vigilancia/data/
 enriquecimento/data/
+busca/data/
 *.duckdb
 *.duckdb.wal
+
+# coleta bruta da ficha do pePI (609 MB, excede o limite do GitHub e e re-coletavel;
+# a tabela ficha_extras sai dele via ingest). O procuradores-sigilo.csv (2 MB) fica
+# versionado de proposito -- este e a excecao pelo tamanho.
+inpi/referencias/ficha-extras.csv
 
 # ambiente
 .venv/
@@ -25,3 +31,4 @@ vendor/
 # marketplace de skills clonado (28 MB, re-clonavel)
 .claude/skills/claude-skills/
 docs/relatorios/
+.tor/

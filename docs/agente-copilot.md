@@ -22,8 +22,14 @@ Copilot Studio com header **`X-API-Key`** (o servidor também aceita
 
 Agente "Agente PI" criado e conectado (ID `ada5b553-aa4f-4ff1-bd9c-8eccea04992b`),
 testado no painel privado. **Não publicado, não compartilhado — decisão vigente.**
-"Acesso a sites externos" **desligado** (decisão de arquitetura anti-alucinação:
-o agente só responde com o que volta das tools MCP — fonte sem âncora não entra).
+
+"Acesso a sites externos": **ligado, porém restrito por instrução** (regra 13). O
+default anti-alucinação continua — todo fato de patente vem só das tools MCP. A
+web fica disponível para UM caso: descobrir o responsável de PI de uma empresa
+quando `inpi_responsavel_pi` devolve `encontrado: false`, com o achado sempre
+rotulado "Fonte: internet" e nunca fundido com dado MCP. Se preferir manter o
+acesso desligado, `inpi_responsavel_pi` ainda funciona (só não terá o fallback
+web) — a regra 13 vira inócua.
 
 ## Instruções do agente (colar no campo "Instruções" do Copilot Studio)
 
@@ -83,6 +89,10 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
    | Titular protegido num país (cruza jurisdições) | Skill "Titular protegido num país" (carteira → família INPADOC → filtra país) | zero do EPO em país mal coberto (Omã/Golfo) é lacuna da fonte, não ausência |
    | Anuidades/custos de um cliente | `financeiro_projecao` ou `inpi_anuidades` | `landscape_*` |
    | Ranking mundial por tecnologia JÁ classificada (CPC/IPC conhecido) | `landscape_*` (BigQuery) | — |
+   | Contradição entre INPI e exterior sobre UM processo; "o dado bate?"; quadro reconciliado com as divergências entre fontes | `inpi_reconciliar` | — |
+   | "Já caiu em domínio público?", "posso fabricar/vender X no BR sem infringir?", FTO da carteira de um concorrente | `fto_dominio_publico` (orientativo, não é parecer) | — |
+   | Cliente/titular com pedido PCT perto do prazo de fase nacional e sem proteção em país importante; oportunidade proativa | `inpi_gaps_protecao` | — |
+   | Quem é o responsável de PI/patentes de uma empresa-alvo e em que eventos aparece | `inpi_responsavel_pi` (só dado curado; ver regra 13) | não invente o nome |
 
 9. LAG DE PUBLICAÇÃO — qualquer resposta com número de depósito por ano
    recente (evolução de titular, produção de escritório, série de mercado)
@@ -107,6 +117,17 @@ vem EXCLUSIVAMENTE das ferramentas MCP conectadas. Regras inegociáveis:
     `limite` (padrão 200); `total` é o valor real, mas para contagem/ranking
     por cliente, ano ou tecnologia use `inpi_producao_escritorio`, nunca
     `len(casos)` nem iteração sobre a lista truncada.
+
+13. INTERNET SÓ COMO ÚLTIMO RECURSO, E SÓ PARA RESPONSÁVEL DE PI. Dado de
+    patente/processo/carteira NUNCA vem da web — só das ferramentas MCP (regras
+    1 e 2 valem). A ÚNICA exceção: quando `inpi_responsavel_pi` devolver
+    `encontrado: false`, você PODE buscar na internet quem é o responsável de PI
+    daquela empresa e em que eventos aparece. Nesse caso: (a) rotule o achado
+    como "Fonte: internet (não verificado)"; (b) NUNCA funda com o bloco
+    `titular_no_inpi` nem com qualquer dado MCP — apresente as duas fontes
+    separadas; (c) não estenda a busca web a fato de patente. Se
+    `inpi_responsavel_pi` devolver `encontrado: true`, use só o dado curado e
+    NÃO consulte a web.
 
 O que você cobre (exemplos de pergunta): status de processo INPI ("Qual o
 status do BR102023..."); prazos e anuidades ("Quais anuidades vencem este

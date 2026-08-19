@@ -137,6 +137,44 @@ def _deduplicar_por_familia(itens: list[dict]) -> list[dict]:
     return saida
 
 
+def _resumo_executivo(patentes: list[dict], npl: list[dict]) -> dict:
+    """Sintese executiva DETERMINISTICA sobre o resultado ja coletado -- sem chamada
+    extra a fonte alguma. Agrega so o que o pipeline realmente tem em maos (fonte,
+    pais pelo prefixo da referencia, ano da data). Titular/CPC ficariam de fora porque
+    o resultado nao os carrega e busca-los custaria N consultas por item -- o texto
+    executivo/narrativo fica a cargo do agente, esta funcao so entrega os numeros.
+    Espelha os KPIs do app legado (total, distribuicao) na medida do que temos aqui."""
+    from collections import Counter
+
+    def _pais(ref: str) -> str:
+        # 'BR-102019...', 'EP1234567', 'US-...' -> prefixo de 2 letras.
+        r = (ref or "").strip().upper()
+        return r[:2] if len(r) >= 2 and r[:2].isalpha() else "??"
+
+    def _ano(item: dict) -> str | None:
+        d = item.get("data_publicacao") or item.get("data_deposito")
+        return str(d)[:4] if d else None
+
+    por_pais = Counter(_pais(p.get("referencia", "")) for p in patentes)
+    por_fonte: Counter = Counter()
+    for p in patentes:
+        for f in p.get("fontes", [p.get("fonte")]):
+            if f:
+                por_fonte[f] += 1
+    por_ano = Counter(a for a in (_ano(p) for p in patentes) if a)
+
+    return {
+        "familias_de_patente": len(patentes),
+        "documentos_npl": len(npl),
+        "por_pais": dict(por_pais.most_common()),
+        "por_fonte": dict(por_fonte.most_common()),
+        "por_ano_deposito_ou_publicacao": dict(sorted(por_ano.items())),
+        "nota": ("KPIs deterministicos do conjunto retornado. Titular e CPC nao entram "
+                 "aqui -- o resultado nao os traz e busca-los custaria uma consulta por "
+                 "item; peca inpi_processo/inpi_perfil_titular se precisar deles."),
+    }
+
+
 def busca_anterioridade(conceitos: list[str], ipc: list[str] | None = None,
                          desde: str | None = None, data_critica: str | None = None,
                          limite_por_fonte: int = 20) -> dict:
@@ -228,6 +266,7 @@ def busca_anterioridade(conceitos: list[str], ipc: list[str] | None = None,
     ))
 
     return {
+        "resumo_executivo": _resumo_executivo(deduplicado, npl),
         "conceitos": conceitos,
         "ipc": ipc or [],
         "data_critica": data_critica,

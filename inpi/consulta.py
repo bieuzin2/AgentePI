@@ -100,6 +100,84 @@ def _linhas(sql: str, params: list | None = None) -> list[dict[str, Any]]:
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+_TABELAS: set[str] | None = None
+
+
+def _tem_tabela(nome: str) -> bool:
+    """True se a tabela existe no banco. As tabelas ficha_* / renumeracoes so sao
+    criadas quando a coleta correspondente rodou (ver inpi/ingest.py); consultar
+    sem checar levanta CatalogException. Cache por processo -- o schema nao muda
+    em runtime (banco read-only)."""
+    global _TABELAS
+    if _TABELAS is None:
+        _TABELAS = {
+            r["table_name"]
+            for r in _linhas(
+                "SELECT table_name FROM information_schema.tables"
+            )
+        }
+    return nome in _TABELAS
+
+
+def _ficha_extras(num: str) -> dict[str, Any]:
+    """Dado raspado do pePI que o dump de dados abertos nao traz: CPC, ledger real
+    de peticoes e o ledger real de anuidades pagas (nao a projecao do art. 84).
+    Devolve {} quando a coleta nao cobriu este pedido -- a maioria da base."""
+    out: dict[str, Any] = {}
+    if _tem_tabela("ficha_extras"):
+        fe = _linhas(
+            "SELECT cpc, escritorio_canonico, coletado_em FROM ficha_extras "
+            "WHERE numero_inpi = ?",
+            [num],
+        )
+        if fe and fe[0].get("cpc"):
+            out["cpc"] = fe[0]["cpc"]
+    if _tem_tabela("ficha_peticoes"):
+        pet = _linhas(
+            "SELECT codigo, descricao, valor, protocolo, data_protocolo "
+            "FROM ficha_peticoes WHERE numero_inpi = ? ORDER BY data_protocolo",
+            [num],
+        )
+        if pet:
+            out["peticoes"] = pet
+    if _tem_tabela("ficha_anuidades"):
+        anu = _linhas(
+            "SELECT numero, status, gru, valor, data_pagamento "
+            "FROM ficha_anuidades WHERE numero_inpi = ? ORDER BY numero",
+            [num],
+        )
+        if anu:
+            # Ledger REALIZADO (o que foi pago), distinto de inpi_anuidades, que
+            # PROJETA o devido pelo art. 84. Nome explicito evita confundir os dois.
+            out["anuidades_pagas"] = anu
+    return out
+
+
+def _renumeracao(num: str) -> dict[str, Any]:
+    """numero_inpi_original (renumeracao INPI) e vinculos de divisao/certificado.
+    Resolve a confusao de numeracao que aparece quando o INPI renumera ou divide
+    um pedido -- dado antes orfao (tabelas renumeracoes/vinculos)."""
+    out: dict[str, Any] = {}
+    if _tem_tabela("renumeracoes"):
+        r = _linhas(
+            "SELECT numero_inpi_original FROM renumeracoes WHERE numero_inpi = ?",
+            [num],
+        )
+        if r and r[0].get("numero_inpi_original"):
+            out["numero_inpi_original"] = r[0]["numero_inpi_original"]
+    if _tem_tabela("vinculos"):
+        v = _linhas(
+            """SELECT numero_inpi_origem, numero_inpi_derivado, tipo_vinculo,
+                      data_vinculo
+               FROM vinculos
+               WHERE numero_inpi_origem = ? OR numero_inpi_derivado = ?""",
+            [num, num],
+        )
+        if v:
+            out["vinculos"] = v
+    return out
+
+
 def _prazo_declarado(texto: str | None) -> int | None:
     """Le "N (por extenso) dias" do texto do despacho. NAO e calculo de prazo.
 
@@ -171,6 +249,10 @@ def inpi_processo(numero: str) -> dict:
     return {
         "numero_inpi": num,
         "dados": bib[0],
+        # Extras raspados do pePI (CPC, ledger de peticoes/anuidades pagas) e
+        # renumeracao/vinculos. So aparecem quando ha dado; {} nao polui a saida.
+        **_ficha_extras(num),
+        **_renumeracao(num),
         "titulo": (texto[0]["titulo"] if texto else None),
         "resumo": (texto[0]["resumo"] if texto else None),
         "depositantes": _linhas(
