@@ -31,6 +31,31 @@ rotulado "Fonte: internet" e nunca fundido com dado MCP. Se preferir manter o
 acesso desligado, `inpi_responsavel_pi` ainda funciona (só não terá o fallback
 web) — a regra 13 vira inócua.
 
+## Quando adicionar/atualizar tools — REFRESH obrigatório no Copilot Studio
+
+O Copilot Studio **cacheia a lista de tools** de quando a conexão MCP foi criada.
+Tool nova no servidor NÃO aparece sozinha — o agente pode até ter a instrução (e citar
+o nome da tool), mas responde "não disponível nesta sessão" porque o manifesto está
+velho. Sempre que fizer deploy de uma tool nova, execute este runbook:
+
+1. **Confirme o servidor** (sem login): abra `https://agentepi.onrender.com/tools`.
+   Deve listar a tool nova (ex.: `inpi_anuidades_pagas`). Se não listar, o deploy do
+   Render ainda não terminou — espere 2-5 min e recarregue. (`/health` dá só a contagem.)
+2. Copilot Studio → agente **Agente PI** → aba **Tools/Ferramentas**.
+3. **Caso A — conectado como servidor MCP inteiro** (um conector só que trouxe todas as
+   tools juntas): abra a conexão do servidor `agente-pi` e rode **"Add and configure"**
+   / **Refresh**; se pedir, **re-autorize** com a `X-API-Key`. Reimporta as 49 de uma vez.
+4. **Caso B — conectado tool a tool** (cada ação adicionada individualmente): adicione as
+   novas manualmente pelo mesmo fluxo das antigas: `inpi_anuidades_pagas`,
+   `inpi_peticoes_escritorio`, `inpi_reconciliar`, `fto_dominio_publico`,
+   `inpi_gaps_protecao`, `inpi_responsavel_pi`.
+   (Não sabe qual caso é o seu? Veja se na aba Tools existe UMA entrada do servidor
+   `agente-pi` com várias ações dentro — Caso A — ou várias entradas soltas — Caso B.)
+5. **Generative orchestration LIGADA** (Configurações do agente) — MCP não funciona sem.
+6. Cole as **Instruções atualizadas** (bloco abaixo) no campo Instruções do agente.
+7. **Verifique**: a tool nova deve aparecer na lista de Tools do agente. Confirme com a
+   pergunta de teste (ver "Verificação" no fim deste arquivo).
+
 ## Instruções do agente (colar no campo "Instruções" do Copilot Studio)
 
 ```
@@ -146,3 +171,15 @@ oposição contra os EPs do cliente Z?"); tópico livre + país ("Quantas
 patentes relacionadas a covid foram depositadas no Nepal?", "Patentes sobre
 baterias de sódio no mundo").
 ```
+
+## Verificação (após o refresh)
+
+No chat privado do Agente PI (não publique), pergunte:
+
+> "Quantas anuidades a Clarke Modet pagou em março de 2025 e em março de 2026?"
+
+Resposta esperada: **979** (março/2025) e **1.074** (março/2026), roteando por
+`inpi_anuidades_pagas` (ledger da ficha do pePI), com o rodapé de fonte e o bloco de
+cobertura. Se vier a projeção (`inpi_prazos_carteira`, ~10.554/~12.122) ou "não
+disponível", o refresh não pegou — repita o runbook acima e confirme em
+`https://agentepi.onrender.com/tools` que a tool está no servidor.

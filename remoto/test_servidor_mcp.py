@@ -54,6 +54,20 @@ def test_health_nao_exige_chave():
     assert resposta.json()["tools"] == len(TOOLS)
 
 
+def test_tools_lista_nomes_sem_exigir_chave():
+    from starlette.testclient import TestClient
+
+    app = montar_app()
+    cliente = TestClient(app)
+    resposta = cliente.get("/tools")
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == len(TOOLS)
+    # as tools novas do ledger do pePI precisam estar expostas
+    assert "inpi_anuidades_pagas" in corpo["tools"]
+    assert "inpi_peticoes_escritorio" in corpo["tools"]
+
+
 def test_mcp_recusa_sem_chave():
     from starlette.testclient import TestClient
 

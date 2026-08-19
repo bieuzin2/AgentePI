@@ -142,7 +142,7 @@ class _ExigeChaveDeAPI(BaseHTTPMiddleware):
         self._chave = chave_esperada
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/health":
+        if request.url.path in ("/health", "/tools"):
             return await call_next(request)
         if not _chave_valida(request.headers, self._chave):
             return JSONResponse({"erro": "chave de API invalida ou ausente"}, status_code=401)
@@ -164,8 +164,12 @@ def montar_app() -> Starlette:
         port=int(os.environ.get("PORT", 8000)),
         stateless_http=True,
     )
+    # Nomes que divergem do __name__ da funcao, para bater com o servidor INPI
+    # stdio e com o mapa de roteamento em docs/agente-copilot.md (o Copilot chama
+    # a tool pelo nome que o conector expoe -- tem de ser o mesmo em toda parte).
+    _NOMES = {"reconciliar": "inpi_reconciliar"}
     for fn in TOOLS:
-        mcp.add_tool(fn)
+        mcp.add_tool(fn, name=_NOMES.get(fn.__name__))
 
     app = mcp.streamable_http_app()
     app.add_middleware(_ExigeChaveDeAPI, chave_esperada=api_key)
@@ -173,7 +177,16 @@ def montar_app() -> Starlette:
     async def health(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True, "servidor": "agente-pi", "tools": len(TOOLS)})
 
+    async def tools(request: Request) -> JSONResponse:
+        # Nomes das tools que o servidor EXPOE. Sem auth (como /health) -- so nomes,
+        # nenhum dado. Serve para conferir num relance, apos um deploy, se uma tool
+        # nova chegou ao servidor, e depois comparar com o que o Copilot Studio
+        # lista apos o refresh da conexao (ver docs/agente-copilot.md).
+        nomes = sorted(_NOMES.get(fn.__name__, fn.__name__) for fn in TOOLS)
+        return JSONResponse({"total": len(nomes), "tools": nomes})
+
     app.add_route("/health", health, methods=["GET"])
+    app.add_route("/tools", tools, methods=["GET"])
     return app
 
 
