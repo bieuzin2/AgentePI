@@ -1,0 +1,30 @@
+# Nunca vao pra imagem -- pesam GBs ou sao segredo/irrelevante em runtime.
+.git
+.venv
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# Dados: no container o banco vem do MotherDuck, nao de arquivo local.
+inpi/data
+epo/data
+vigilancia/data
+enriquecimento/data
+busca/data
+landscape/data
+*.duckdb
+*.duckdb.wal
+
+# CSV bruto de 609 MB (so o ingest le; o servidor nao). As demais referencias
+# (escritorios-apelidos, procuradores-sigilo, responsaveis-pi, jurisdicoes) SAO
+# lidas em runtime e por isso NAO entram aqui.
+inpi/referencias/ficha-extras.csv
+
+# Segredos e tooling que nao pertencem a imagem.
+.env
+.env.*
+.claude
+.agents
+docs
+skills-lock.json

@@ -29,6 +29,29 @@ from __future__ import annotations
 
 import os
 
+
+def _materializa_credencial_gcp() -> None:
+    """Se GOOGLE_APPLICATION_CREDENTIALS_JSON estiver no ambiente (host que so
+    aceita env var, nao arquivo), grava o conteudo num arquivo e aponta o
+    GOOGLE_APPLICATION_CREDENTIALS para ele -- e o que a lib do BigQuery espera.
+
+    No Cloud Run isto NAO e necessario: o servico usa a service account de runtime
+    (ADC nativo) e o landscape funciona sem env nenhuma. O shim existe para
+    portabilidade (Koyeb/VPS/qualquer host sem 'secret file'). Roda antes de
+    qualquer import que crie o cliente BigQuery."""
+    bruto = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if not bruto or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        return
+    import tempfile
+
+    caminho = os.path.join(tempfile.gettempdir(), "gcp-creds.json")
+    with open(caminho, "w", encoding="utf-8") as fh:
+        fh.write(bruto)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = caminho
+
+
+_materializa_credencial_gcp()
+
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
