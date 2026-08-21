@@ -112,6 +112,12 @@ def inpi_peticoes_escritorio(escritorio: str, codigos: list[str] | None = None,
                 "protocolou nada'. Confirme a cobertura antes de afirmar ausencia."
             ),
         },
+        "proximas_analises": [
+            "Media de exigencias por pedido e tempo ate a 1a exigencia: "
+            "inpi_exigencias_stats (aceita comparar_com um concorrente).",
+            "Estatistica por codigo/mes ou comparativo com concorrente: "
+            "inpi_estatistica dataset='peticoes'.",
+        ],
         "nota": (
             "Cumprimento de exigencia = codigo 207 (a RPI publica a exigencia, nao o "
             "cumprimento). Peticao protocolada, distinta da exigencia vista na RPI "

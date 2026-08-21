@@ -38,14 +38,28 @@ def test_conta_so_pagas_no_periodo(monkeypatch):
     _con_fake(monkeypatch)
     r = m.inpi_anuidades_pagas("Clarke Modet", de="2025-03", ate="2025-03")
     assert r["total_anuidades_pagas"] == 2  # as duas de marco/2025, nao a sem data
-    assert r["por_mes"] == {"2025-03": 2}
+    assert r["por_mes"]["2025-03"]["pagas"] == 2
 
 
 def test_periodo_amplo_agrupa_por_mes(monkeypatch):
     _con_fake(monkeypatch)
     r = m.inpi_anuidades_pagas("Clarke Modet", de="2025-01", ate="2026-12")
     assert r["total_anuidades_pagas"] == 3
-    assert r["por_mes"] == {"2025-03": 2, "2026-03": 1}
+    assert r["por_mes"]["2025-03"]["pagas"] == 2
+    assert r["por_mes"]["2026-03"]["pagas"] == 1
+
+
+def test_soma_valor_e_descarta_gru(monkeypatch):
+    con = _con_fake(monkeypatch)
+    # injeta uma anuidade paga com valor valido e outra com GRU vazada no valor
+    con.execute("""INSERT INTO ficha_anuidades VALUES
+        ('P1','7a','OK','G9','$1,000.00','05/03/2025'),
+        ('P2','8a','OK','921002573202','921002573202','06/03/2025')
+    """)
+    r = m.inpi_anuidades_pagas("Clarke Modet", de="2025-03", ate="2025-03")
+    # duas pagas originais (valor $250 cada) + a de $1.000 = 1500; a GRU e descartada
+    assert r["valor_total_reais"] == 1500.0
+    assert r["valores_invalidos_descartados"] == 1
 
 
 def test_declara_cobertura(monkeypatch):
