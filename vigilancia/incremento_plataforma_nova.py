@@ -57,6 +57,31 @@ def numeros_despacho_novo() -> list[str]:
         con.close()
 
 
+def rodar_incremento(numeros_inpi: list[str],
+                     escritorio_canonico: str = "CLARKE MODET") -> dict:
+    """Roda coletar_com_fallback_pepi sobre `numeros_inpi` com um cliente
+    autenticado novo. Login/senha vem de INPI_PAG_LOGIN/INPI_PAG_PASSWORD --
+    mesma env var que inpi/validar_plataforma_nova.py usa. Sem numeros ou sem
+    credencial, devolve {"pulado": True, ...} sem tentar rede -- mesma
+    convencao de vigilancia.sync_motherduck.sincronizar() para
+    MOTHERDUCK_TOKEN ausente."""
+    if not numeros_inpi:
+        return {"pulado": True, "mensagem": "nenhum numero_inpi na lista de prioridade."}
+    login = os.environ.get("INPI_PAG_LOGIN")
+    senha = os.environ.get("INPI_PAG_PASSWORD")
+    if not login or not senha:
+        return {"pulado": True, "mensagem": "INPI_PAG_LOGIN/INPI_PAG_PASSWORD ausentes."}
+
+    from inpi.coleta_plataforma_nova import coletar_com_fallback_pepi
+    from inpi.plataforma_nova import ClientePlataformaNova
+
+    cliente = ClientePlataformaNova(login, senha)
+    try:
+        return coletar_com_fallback_pepi(cliente, numeros_inpi, escritorio_canonico)
+    finally:
+        cliente.fechar()
+
+
 def numeros_watermark_vencido(dias: int = 60) -> list[str]:
     """numero_inpi de biblio sem coleta da plataforma nova ha mais de `dias`,
     ou nunca coletados. Rede de seguranca mensal (spec: despacho novo nao

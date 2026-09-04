@@ -70,3 +70,33 @@ def test_numeros_watermark_vencido_pega_nunca_coletado_e_antigo(monkeypatch, tmp
     resultado = inc.numeros_watermark_vencido(dias=60)
 
     assert sorted(resultado) == ["P2", "P3"]
+
+
+def test_rodar_incremento_sem_numeros_pula(monkeypatch):
+    assert inc.rodar_incremento([]) == {
+        "pulado": True, "mensagem": "nenhum numero_inpi na lista de prioridade."
+    }
+
+
+def test_rodar_incremento_sem_credencial_pula(monkeypatch):
+    monkeypatch.delenv("INPI_PAG_LOGIN", raising=False)
+    monkeypatch.delenv("INPI_PAG_PASSWORD", raising=False)
+    r = inc.rodar_incremento(["P1"])
+    assert r == {"pulado": True, "mensagem": "INPI_PAG_LOGIN/INPI_PAG_PASSWORD ausentes."}
+
+
+def test_rodar_incremento_chama_coletar_com_fallback_pepi(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.setenv("INPI_PAG_LOGIN", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD", "pass")
+    cliente_mock = MagicMock()
+    with patch("inpi.plataforma_nova.ClientePlataformaNova", return_value=cliente_mock) as Cliente, \
+         patch("inpi.coleta_plataforma_nova.coletar_com_fallback_pepi",
+               return_value={"registrados": 1}) as coletar:
+        r = inc.rodar_incremento(["P1", "P2"], escritorio_canonico="CLARKE MODET")
+
+    Cliente.assert_called_once_with("user", "pass")
+    coletar.assert_called_once_with(cliente_mock, ["P1", "P2"], "CLARKE MODET")
+    cliente_mock.fechar.assert_called_once()
+    assert r == {"registrados": 1}

@@ -22,7 +22,7 @@ from pathlib import Path
 import duckdb
 import yaml
 
-from vigilancia import email_alerta, reingestao, vigias
+from vigilancia import email_alerta, incremento_plataforma_nova, reingestao, vigias
 
 RAIZ = Path(__file__).resolve().parent
 CONFIG = RAIZ / "config.yaml"
@@ -127,6 +127,14 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
             _loga_execucao(sucesso=False, mensagem=r["mensagem"])
             return r
 
+    # Tem de rodar enquanto inpi_anterior.duckdb ainda existe, ou seja, antes
+    # de sincronizar_incremental() (mais abaixo) apagar a copia.
+    prioridade = incremento_plataforma_nova.numeros_despacho_novo()
+    if primeira_execucao_do_mes(ref):
+        prioridade = sorted(set(prioridade) | set(
+            incremento_plataforma_nova.numeros_watermark_vencido()))
+    incremento = incremento_plataforma_nova.rodar_incremento(prioridade)
+
     numeros = cfg.get("carteira") or []
     titulares = cfg.get("titulares_concorrentes") or []
     ipcs = cfg.get("ipcs") or []
@@ -179,6 +187,7 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
     return {
         "executado_em": ref.isoformat(),
         "sync_motherduck": sync,
+        "incremento_plataforma_nova": incremento,
         "desde": desde,
         "total_alertas": len(alertas),
         "gravados": gravados,
