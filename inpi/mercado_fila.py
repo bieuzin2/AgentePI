@@ -105,7 +105,8 @@ def _numeros_do_titular(con: duckdb.DuckDBPyConnection, chave: str) -> list[str]
 
 
 def popular_concorrentes(top_cpc: int = 3,
-                         limite_titulares_por_cpc: int = 10) -> dict:
+                         limite_titulares_por_cpc: int = 10,
+                         confirmar_acima_10gb: bool = False) -> dict:
     """Deriva concorrentes via landscape_carteira() sobre os clientes
     curados da Clarke Modet (inpi/referencias/clientes-clarke.csv): para
     cada cliente, pega os titulares que mais depositam nas mesmas
@@ -128,7 +129,8 @@ def popular_concorrentes(top_cpc: int = 3,
     nao_resolvidos: list[str] = []
     try:
         for cliente_nome in clientes:
-            resultado = landscape_carteira(cliente=cliente_nome, top_cpc=top_cpc)
+            resultado = landscape_carteira(cliente=cliente_nome, top_cpc=top_cpc,
+                                           confirmar_acima_10gb=confirmar_acima_10gb)
             for info in resultado.get("por_cpc", {}).values():
                 for linha in info.get("top_titulares_mundiais", [])[:limite_titulares_por_cpc]:
                     nome_titular = linha.get("titular")

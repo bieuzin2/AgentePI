@@ -141,7 +141,8 @@ def test_popular_concorrentes_resolve_titulares_e_insere_numeros(monkeypatch, tm
         resultado = fila.popular_concorrentes(top_cpc=3, limite_titulares_por_cpc=10)
 
     mock_landscape.assert_called_once_with(
-        cliente="HUAWEI TECHNOLOGIES CO., LTD.", top_cpc=3)
+        cliente="HUAWEI TECHNOLOGIES CO., LTD.", top_cpc=3,
+        confirmar_acima_10gb=False)
 
     con = fila._con()
     linhas = sorted(r[0] for r in con.execute(
