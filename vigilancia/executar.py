@@ -129,11 +129,20 @@ def executar(dry_run: bool = False, sem_reingestao: bool = False,
 
     # Tem de rodar enquanto inpi_anterior.duckdb ainda existe, ou seja, antes
     # de sincronizar_incremental() (mais abaixo) apagar a copia.
-    prioridade = incremento_plataforma_nova.numeros_despacho_novo()
-    if primeira_execucao_do_mes(ref):
-        prioridade = sorted(set(prioridade) | set(
-            incremento_plataforma_nova.numeros_watermark_vencido()))
-    incremento = incremento_plataforma_nova.rodar_incremento(prioridade)
+    #
+    # try/except abrangente de proposito: este bloco fica ANTES dos vigias e do
+    # e-mail de alerta, entao qualquer excecao aqui (tabela ficha_extras
+    # ausente, schema de despachos mudado, rede/credencial do pePI) derrubaria
+    # a rodada semanal inteira, alertas incluidos. Global Constraint do plano:
+    # falha no incremento devolve pulado=True, nunca levanta.
+    try:
+        prioridade = incremento_plataforma_nova.numeros_despacho_novo()
+        if primeira_execucao_do_mes(ref):
+            prioridade = sorted(set(prioridade) | set(
+                incremento_plataforma_nova.numeros_watermark_vencido()))
+        incremento = incremento_plataforma_nova.rodar_incremento(prioridade)
+    except Exception as exc:
+        incremento = {"pulado": True, "mensagem": f"{type(exc).__name__}: {exc}"}
 
     numeros = cfg.get("carteira") or []
     titulares = cfg.get("titulares_concorrentes") or []

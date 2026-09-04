@@ -18,6 +18,21 @@ precisa_banco = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def sem_rede(monkeypatch):
+    """executar() chama sincronizar_incremental() e o incremento da plataforma
+    nova -- ambos batem em servico externo. Com MOTHERDUCK_TOKEN no .env e
+    inpi_anterior.duckdb em disco, rodar a suite mandava DELETE/INSERT de
+    verdade pro MotherDuck de PRODUCAO. Mockado aqui, como os testes de
+    sync_motherduck ja fazem com a conexao."""
+    import vigilancia.sync_motherduck as sync
+
+    monkeypatch.setattr(sync, "sincronizar_incremental",
+                        lambda: {"ok": True, "modo": "mock de teste"})
+    monkeypatch.setattr(executar.incremento_plataforma_nova, "rodar_incremento",
+                        lambda *a, **k: {"pulado": True, "mensagem": "mock de teste"})
+
+
 def test_primeira_execucao_do_mes():
     from datetime import date
 
@@ -54,6 +69,29 @@ def test_executar_dry_run_nao_envia_email_e_gera_markdown(tmp_path, monkeypatch)
     assert log_teste.exists()
     linha = json.loads(log_teste.read_text(encoding="utf-8").splitlines()[-1])
     assert linha["sucesso"] is True
+
+
+@precisa_banco
+def test_falha_no_incremento_nao_derruba_a_rodada(tmp_path, monkeypatch):
+    """I1: o incremento roda ANTES dos vigias e do e-mail. Excecao ali (tabela
+    ausente, schema mudado, rede do pePI) nao pode matar a rodada semanal."""
+    monkeypatch.setattr(executar, "BANCO", tmp_path / "a.duckdb")
+    monkeypatch.setattr(executar, "ALERTAS_MD", tmp_path / "a.md")
+    monkeypatch.setattr(executar, "LOG_EXECUCAO", tmp_path / "log.jsonl")
+    monkeypatch.setattr(executar, "ESTADO_ANUIDADES", tmp_path / "ea.json")
+    monkeypatch.setattr(executar, "ESTADO_EXTERIOR", tmp_path / "ee.json")
+
+    def explode():
+        raise RuntimeError("tabela despachos sumiu")
+
+    monkeypatch.setattr(executar.incremento_plataforma_nova, "numeros_despacho_novo", explode)
+
+    r = executar.executar(sem_reingestao=True, sem_email=True, hoje="2026-08-12",
+                           destino_dashboard=str(tmp_path / "panorama.html"))
+
+    assert r["incremento_plataforma_nova"]["pulado"] is True
+    assert "tabela despachos sumiu" in r["incremento_plataforma_nova"]["mensagem"]
+    assert not r.get("erro")
 
 
 @precisa_banco
