@@ -55,3 +55,25 @@ def numeros_despacho_novo() -> list[str]:
         return [r[0] for r in linhas]
     finally:
         con.close()
+
+
+def numeros_watermark_vencido(dias: int = 60) -> list[str]:
+    """numero_inpi de biblio sem coleta da plataforma nova ha mais de `dias`,
+    ou nunca coletados. Rede de seguranca mensal (spec: despacho novo nao
+    correlaciona 100% com mudanca real -- ver docstring do modulo)."""
+    import duckdb
+
+    if not BANCO_INPI.exists():
+        return []
+    con = duckdb.connect(str(BANCO_INPI), read_only=True)
+    try:
+        linhas = con.execute(
+            """SELECT b.numero_inpi FROM biblio b
+               LEFT JOIN ficha_extras f USING (numero_inpi)
+               WHERE f.numero_inpi IS NULL
+                  OR try_strptime(f.coletado_em, '%Y-%m-%d') < current_date - INTERVAL (?) DAY""",
+            [dias],
+        ).fetchall()
+        return [r[0] for r in linhas]
+    finally:
+        con.close()

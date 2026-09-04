@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import duckdb
 
 import vigilancia.incremento_plataforma_nova as inc
@@ -41,3 +43,30 @@ def test_numeros_despacho_novo_identifica_processo_com_despacho_novo(monkeypatch
     resultado = inc.numeros_despacho_novo()
 
     assert sorted(resultado) == ["P1", "P3"]
+
+
+def test_numeros_watermark_vencido_sem_banco_devolve_vazio(monkeypatch, tmp_path):
+    monkeypatch.setattr(inc, "BANCO_INPI", tmp_path / "nao-existe.duckdb")
+    assert inc.numeros_watermark_vencido() == []
+
+
+def test_numeros_watermark_vencido_pega_nunca_coletado_e_antigo(monkeypatch, tmp_path):
+    banco = tmp_path / "inpi.duckdb"
+    con = duckdb.connect(str(banco))
+    con.execute("CREATE TABLE biblio (numero_inpi VARCHAR)")
+    con.execute("INSERT INTO biblio VALUES ('P1'), ('P2'), ('P3')")
+    con.execute("CREATE TABLE ficha_extras (numero_inpi VARCHAR, coletado_em VARCHAR)")
+    recente = date.today().isoformat()
+    antigo = (date.today() - timedelta(days=90)).isoformat()
+    con.execute(
+        "INSERT INTO ficha_extras VALUES (?, ?), (?, ?)",
+        ["P1", recente, "P2", antigo],
+    )
+    # P3: nunca coletado (sem linha em ficha_extras) -- tambem deve entrar.
+    con.close()
+
+    monkeypatch.setattr(inc, "BANCO_INPI", banco)
+
+    resultado = inc.numeros_watermark_vencido(dias=60)
+
+    assert sorted(resultado) == ["P2", "P3"]
