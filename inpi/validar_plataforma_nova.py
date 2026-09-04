@@ -61,6 +61,84 @@ def amostrar_processos(escritorio_canonico: str | None, tamanho: int,
     return amostra
 
 
+def amostrar_legado(tamanho: int) -> list[str]:
+    """Amostra numero_inpi em formato LEGADO ('PIxxxxxxx', pedidos pre-2012),
+    ja coletados pelo pePI (ficha_extras) -- excluidos de propósito de
+    amostrar_processos(). Mede se a plataforma nova aceita esse formato
+    tambem (nao documentado, mas testado ao vivo em 2026-09-04: aceita,
+    ~79% de acerto passando o numero como esta, sem conversao)."""
+    linhas = _linhas(
+        "SELECT numero_inpi FROM ficha_extras WHERE numero_inpi LIKE 'PI%'"
+    )
+    numeros = [r["numero_inpi"] for r in linhas]
+    return random.sample(numeros, min(tamanho, len(numeros)))
+
+
+def validar_legado(cliente: ClientePlataformaNova, tamanho: int = 200) -> dict:
+    """Roda a amostra legado contra a plataforma nova de verdade. Nao chamar
+    em teste automatizado -- rede real, conta dedicada."""
+    resultados = {"total": 0, "sucesso": 0, "erro": 0, "erros_exemplo": []}
+    for numero_inpi in amostrar_legado(tamanho):
+        resultados["total"] += 1
+        try:
+            biblio = cliente.get_bibliographic_data(numero_inpi)
+            if biblio:
+                resultados["sucesso"] += 1
+            else:
+                resultados["erro"] += 1
+        except PlataformaNovaError as exc:
+            resultados["erro"] += 1
+            if len(resultados["erros_exemplo"]) < 10:
+                resultados["erros_exemplo"].append(f"{numero_inpi}: {exc}")
+        time.sleep(0.15)
+    resultados["taxa_sucesso"] = (round(resultados["sucesso"] / resultados["total"], 3)
+                                  if resultados["total"] else None)
+    return resultados
+
+
+def amostrar_sigilo_com_procurador_conhecido(tamanho: int) -> list[dict]:
+    """Amostra processos em SIGILO (biblio.sigilo=1.0, formato moderno) cujo
+    procurador o pePI JA coletou (tabela procuradores, cgccpfprocurador IS
+    NULL identifica linha vinda da coleta de sigilo -- ver inpi/ingest.py).
+    Serve pra comparar o campo (74) da plataforma nova contra um valor de
+    referencia conhecido, nao so checar presenca/ausencia isolada."""
+    linhas = _linhas(
+        """SELECT p.numero_inpi, p.procurador
+           FROM procuradores p JOIN biblio b USING (numero_inpi)
+           WHERE p.cgccpfprocurador IS NULL AND b.sigilo = 1.0
+             AND p.numero_inpi NOT LIKE 'PI%'"""
+    )
+    return random.sample(linhas, min(tamanho, len(linhas)))
+
+
+def validar_sigilo(cliente: ClientePlataformaNova, tamanho: int = 50) -> dict:
+    """Roda a amostra de sigilo com procurador conhecido contra a plataforma
+    nova de verdade e compara. Nao chamar em teste automatizado -- rede
+    real, conta dedicada."""
+    resultados = {"total": 0, "bate": 0, "nao_bate": 0, "sem_campo": 0,
+                 "erro": 0, "divergencias_exemplo": []}
+    for item in amostrar_sigilo_com_procurador_conhecido(tamanho):
+        numero_inpi, procurador_pepi = item["numero_inpi"], item["procurador"]
+        resultados["total"] += 1
+        try:
+            biblio = cliente.get_bibliographic_data(numero_inpi)
+            campo = next((c.get("value") for c in biblio if c.get("inid") == "74"), None)
+            if not campo:
+                resultados["sem_campo"] += 1
+                resultados["divergencias_exemplo"].append((numero_inpi, procurador_pepi, campo))
+            elif procurador_pepi.strip().upper()[:15] in campo.upper():
+                resultados["bate"] += 1
+            else:
+                resultados["nao_bate"] += 1
+                resultados["divergencias_exemplo"].append((numero_inpi, procurador_pepi, campo))
+        except PlataformaNovaError as exc:
+            resultados["erro"] += 1
+            resultados["divergencias_exemplo"].append((numero_inpi, procurador_pepi, str(exc)))
+        time.sleep(0.15)
+    resultados["divergencias_exemplo"] = resultados["divergencias_exemplo"][:10]
+    return resultados
+
+
 def montar_relatorio(resultados: list[dict]) -> dict:
     """Agrega o resultado por-processo em taxas. Cada item de `resultados`:
     {numero_inpi, recente, sucesso, indexado, erro}."""
@@ -116,8 +194,9 @@ def main() -> int:
     login = os.environ["INPI_PAG_LOGIN"]
     senha = os.environ["INPI_PAG_PASSWORD"]
     cliente = ClientePlataformaNova(login, senha)
-    relatorio = rodar_validacao(cliente)
-    print(relatorio)
+    print("formato moderno (recentes/antigos):", rodar_validacao(cliente))
+    print("formato legado (PIxxxxxxx):", validar_legado(cliente))
+    print("sigilo (procurador vs. pePI):", validar_sigilo(cliente))
     return 0
 
 

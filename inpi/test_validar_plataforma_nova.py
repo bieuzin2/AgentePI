@@ -3,7 +3,12 @@ from __future__ import annotations
 import duckdb
 
 import inpi.consulta as consulta
-from inpi.validar_plataforma_nova import amostrar_processos, montar_relatorio
+from inpi.validar_plataforma_nova import (
+    amostrar_legado,
+    amostrar_processos,
+    amostrar_sigilo_com_procurador_conhecido,
+    montar_relatorio,
+)
 
 
 def test_montar_relatorio_separa_recentes_de_antigos_e_calcula_taxas():
@@ -68,3 +73,45 @@ def test_amostrar_processos_exclui_formato_legado_pi(monkeypatch, tmp_path):
     amostra = amostrar_processos("clarke", tamanho=10, dias_recentes=45)
 
     assert {a["numero_inpi"] for a in amostra} == {"102022010731"}
+
+
+def test_amostrar_legado_traz_so_formato_pi(monkeypatch, tmp_path):
+    banco = duckdb.connect(str(tmp_path / "fixture.duckdb"))
+    banco.execute("""
+      CREATE TABLE ficha_extras (numero_inpi VARCHAR, cpc VARCHAR,
+        escritorio_canonico VARCHAR, fonte VARCHAR, coletado_em VARCHAR)
+    """)
+    banco.execute("INSERT INTO ficha_extras VALUES "
+                  "('102022010731', NULL, 'clarke', 'pePI', '2026-08-25'), "
+                  "('PI9401632', NULL, 'clarke', 'pePI', '2026-08-25'), "
+                  "('PI8502923', NULL, 'clarke', 'pePI', '2026-08-25')")
+    monkeypatch.setattr(consulta, "con", lambda: banco)
+
+    amostra = amostrar_legado(tamanho=10)
+
+    assert set(amostra) == {"PI9401632", "PI8502923"}
+
+
+def test_amostrar_sigilo_com_procurador_conhecido_filtra_certo(monkeypatch, tmp_path):
+    banco = duckdb.connect(str(tmp_path / "fixture.duckdb"))
+    banco.execute("CREATE TABLE biblio (numero_inpi VARCHAR, sigilo DOUBLE)")
+    banco.execute("""
+      CREATE TABLE procuradores (numero_inpi VARCHAR, procurador VARCHAR,
+        cgccpfprocurador VARCHAR)
+    """)
+    banco.execute("INSERT INTO biblio VALUES "
+                  "('1', 1.0), ('2', 1.0), ('3', NULL), ('PI123', 1.0)")
+    banco.execute("INSERT INTO procuradores VALUES "
+                  # '1': sigilo, procurador vindo da coleta pePI (cgcc NULL) -- entra
+                  "('1', 'CLARKE MODET', NULL), "
+                  # '2': sigilo, mas procurador vindo do dump aberto (cgcc preenchido) -- fora
+                  "('2', 'OUTRO ESCRITORIO', '12345678000100'), "
+                  # '3': procurador conhecido mas NAO e sigilo -- fora
+                  "('3', 'TERCEIRO', NULL), "
+                  # 'PI123': sigilo + procurador sigilo, mas formato legado -- fora
+                  "('PI123', 'QUARTO', NULL)")
+    monkeypatch.setattr(consulta, "con", lambda: banco)
+
+    amostra = amostrar_sigilo_com_procurador_conhecido(tamanho=10)
+
+    assert amostra == [{"numero_inpi": "1", "procurador": "CLARKE MODET"}]

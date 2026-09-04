@@ -132,9 +132,50 @@ rate-limit/bloqueio em ~1600 requisições (530 processos × 3 chamadas)
 concentradas em poucos minutos com uma única conta.
 
 Limite da amostra: só cobre processos que o pePI já tinha coletado
-(`ficha_extras`), então não testa processos que o pePI NUNCA viu. E é
-formato moderno apenas — cobertura de processos legado (`PIxxxxxxx`,
-~55% da base histórica) na plataforma nova **continua desconhecida**.
+(`ficha_extras`), então não testa processos que o pePI NUNCA viu.
+
+## 5b. Formato legado (`PIxxxxxxx`) — testado, 2026-09-04
+
+Amostra de 100 processos pré-2012 (`ficha_extras.numero_inpi LIKE 'PI%'`),
+número passado **sem conversão** pro mesmo `getBibliographicData`:
+
+| Total | Sucesso | Erro |
+|---|---|---|
+| 100 | 79 (79%) | 21 (21%) |
+
+Achado inesperado: a plataforma nova **aceita o formato legado direto**,
+sem precisar de conversão pro numérico moderno (que nem existe pra pedidos
+pré-2012 — o dump do INPI só guarda `PIxxxxxxx` mesmo). Os 21% de erro são
+"Pedido de patente não encontrado" — cobertura real incompleta pra formato
+legado, não um problema de formato/payload. `inpi/validar_plataforma_nova.py`
+tem `amostrar_legado`/`validar_legado` pra reproduzir/ampliar esse teste.
+
+## 5c. Sigilo — o medo do usuário, testado e refutado
+
+Preocupação original: pedidos em **sigilo** (~43 mil no dump, título/resumo
+ocultos) têm o procurador só visível na ficha do pePI, nunca no dump aberto
+— será que a plataforma nova também esconde isso?
+
+**Caso concreto testado**: `102026015044` (PETRÓLEO BRASILEIRO/UFRJ,
+depositado 17/06/2026, sem título publicado). `getBibliographicData` devolve
+6 campos (21/22/43/47/71/74) — título e resumo (54/57) ausentes, como
+esperado pro sigilo, mas **depositante e procurador aparecem normalmente**
+(`CLARKE, MODET PROPRIEDADE INTELECTUAL LTDA.`). `getListingData` (anuidades)
+também funciona pra esse processo.
+
+**Amostra de 100 sigilo (formato moderno)**: 100/100 alcançável (`erro=0`).
+Procurador presente em 41, ausente em 59 — à primeira vista parecia gap, mas:
+
+**Teste pareado, a prova real**: 50 processos em sigilo cujo procurador o
+**pePI já tinha coletado** (`procuradores` com `cgccpfprocurador IS NULL` =
+veio da coleta de sigilo, não do dump aberto) comparados campo a campo
+contra a plataforma nova — **50/50 bateram exatamente**. Ou seja: os 59%
+"sem procurador" da amostra bruta não são um gap da plataforma nova — são
+processos que genuinamente ainda não têm procurador vinculado (nem o pePI
+tem). **O medo do usuário não se confirma**: sigilo está coberto, e quando
+existe procurador, a plataforma nova mostra o mesmo valor que o pePI.
+`inpi/validar_plataforma_nova.py` tem `amostrar_sigilo_com_procurador_conhecido`/
+`validar_sigilo` pra reproduzir.
 
 ## 6. Comparação pePI+Tor vs. plataforma nova
 
@@ -143,44 +184,53 @@ formato moderno apenas — cobertura de processos legado (`PIxxxxxxx`,
 | Requisições por processo | 2 (busca + GET ficha) | 3 (getBibliographicData + getListingData×2) |
 | Parsing | HTML frágil | JSON estruturado |
 | Autenticação | anônima | login PAG headless, testado sem cookies |
-| Precisa de Tor | sim (IP direto já levou bloqueio) | não — zero bloqueio em ~1600 chamadas |
-| Cobertura de dado | anuidades+petições completo, qualquer formato | biblio+CPC+anuidades confirmado, **só formato moderno** (legado não testado) |
-| Throughput testado | ~45-50 fichas/min | não medido em rajada máxima; 530 processos em poucos minutos sem erro |
+| Precisa de Tor | sim (IP direto já levou bloqueio) | não — zero bloqueio em ~1780 chamadas (530+100+50, sigilo+legado inclusos) |
+| Cobertura formato moderno | completo | 100% confirmado (530/530) |
+| Cobertura formato legado | completo | ~79% confirmado (79/100) — gap real, não de formato |
+| Cobertura sigilo (procurador) | completo (fonte primária) | 100% alcançável, valor idêntico ao pePI quando existe (50/50 pareado) |
+| Throughput testado | ~45-50 fichas/min | não medido em rajada máxima; ~700 processos em poucos minutos sem erro |
 
 ## 7. Opções de arquitetura
 
-**A. Manter pePI+Tor+GitHub Actions como está.** Não faz mais sentido como
-única via — a plataforma nova está validada e sem Tor.
+**A. Manter pePI+Tor+GitHub Actions como está.** Não faz mais sentido —
+a plataforma nova está validada em moderno (100%), legado (79%) e sigilo
+(100%), sem Tor.
 
-**B. Plataforma nova substitui pePI inteiro, corte imediato.** Arriscado:
-não testamos cobertura de formato legado (~55% da base histórica) nem
-volume em escala de produção (530 é uma amostra, não o backlog completo de
-centenas de milhares).
+**B. Plataforma nova substitui pePI inteiro, corte imediato, apaga o pePI.**
+Ainda não recomendo apagar nada: o gap real de 21% no formato legado precisa
+de um plano de fallback (não é zero, é um resíduo que precisa de tratamento).
 
-**C. Corte validado, por partes — recomendado.** Já implementado em
-`inpi/coleta_plataforma_nova.py` (reusa `registrar()` do ficha-extras
-existente, mesmo CSV/schema). Rollout:
-1. Processos formato moderno com depósito recente: já validado, pode migrar.
-2. Processos formato moderno mais antigos: já validado (500/500), pode migrar.
-3. Processos formato legado (`PIxxxxxxx`): **ainda não testado contra a
-   plataforma nova** — pePI continua sendo a fonte até alguém rodar essa
-   validação (adaptar `amostrar_processos` pra incluir `LIKE 'PI%'` e ver o
-   que a API responde pra esse formato, provavelmente rejeitado).
+**C. Corte por partes, pePI como fallback do resíduo — recomendado.** Já
+implementado em `inpi/coleta_plataforma_nova.py` (reusa `registrar()` do
+ficha-extras existente, mesmo CSV/schema):
+1. **Formato moderno (recente + antigo)**: 100% validado (530/530) — migra
+   sem ressalva.
+2. **Sigilo**: coberto (100% alcançável, procurador idêntico ao pePI em
+   teste pareado) — migra junto com o moderno, sem tratamento especial.
+3. **Formato legado (`PIxxxxxxx`)**: 79% cobre direto (sem conversão) — migra
+   pra plataforma nova como fonte primária; os ~21% que derem "não
+   encontrado" caem pro pePI como fallback automático (não é preciso rodar
+   o pePI pra tudo, só pro resíduo que a plataforma nova não resolver).
 
 ### Recomendação
 
-Seguir com **C**: migrar o formato moderno pra plataforma nova (já
-implementado e validado, zero erro em 530 amostras), manter pePI+Tor vivo
-só pro recorte legado até validar separadamente. `inpi/coleta_ficha_extras.py`/
-`inpi/tor_proxy.py` continuam intactos no repo como fallback permanente
-pra esse recorte, não como contingência temporária.
+Seguir com **C**, versão ampliada: a plataforma nova cobre moderno e
+sigilo 100%, e legado 79% — o suficiente pra virar fonte PRIMÁRIA pros três
+recortes, com o pePI acionado só quando a plataforma nova devolver "não
+encontrado" (majoritariamente legado). Isso é uma mudança de arquitetura
+mais simples que orquestrar duas fontes por tipo de processo: tentar
+plataforma nova primeiro, sempre; cair pro pePI só no erro. `inpi/tor_proxy.py`
+continua no repo, mas o uso dele cai drasticamente (só ~21% do legado, que
+por sua vez é ~55% da base histórica — resíduo real: ~12% do total).
 
 ## Pendências pro usuário
 
-1. Testar cobertura de formato legado (`PIxxxxxxx`) na plataforma nova —
-   sem isso, não dá pra decidir se o pePI fica só como fallback de
-   contingência ou como fonte permanente pra ~55% da base histórica.
-2. Se quiser medir throughput em rajada maior (a validação rodou 530
-   processos sequenciais com 0,2s de intervalo, não testou paralelismo nem
-   volume de produção completo), rodar `validar_plataforma_nova.py` com
-   `tamanho` maior antes de migrar o backlog inteiro.
+1. **Decisão de produto**: aceitar o fallback automático plataforma-nova→pePI
+   descrito acima como arquitetura final, ou insistir em entender os 21%
+   de "não encontrado" no legado antes (pode ser pedido morto/arquivado há
+   décadas que nem o pePI teria — não testado, os 21 exemplos de erro desta
+   rodada não foram cruzados contra o status desses processos).
+2. Throughput em rajada maior/paralelismo ainda não medido (~700 chamadas
+   sequenciais nesta sessão, sem erro de rate-limit) — rodar com `tamanho`
+   maior e paralelismo antes de migrar o backlog completo de centenas de
+   milhares.
