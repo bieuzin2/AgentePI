@@ -23,6 +23,7 @@ dependencies = [
     "starlette",
     "uvicorn",
     "reportlab",
+    "playwright",
 ]
 
 [tool.setuptools]
