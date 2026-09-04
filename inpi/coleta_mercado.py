@@ -15,11 +15,17 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from inpi.coleta_ficha_extras import _coletados
 from inpi.coleta_plataforma_nova import coletar_com_fallback_pepi
 from inpi.mercado_fila import marcar, proximo_lote
 from inpi.plataforma_nova import ClientePlataformaNova
+
+# Task Scheduler nao herda o .env -- mesmo padrao de vigilancia/sync_motherduck.py.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def deve_parar(resumo: dict, tamanho_lote: int, limiar: float = 0.3) -> bool:
