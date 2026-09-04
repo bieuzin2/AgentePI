@@ -16,14 +16,22 @@ def con(monkeypatch):
     c.execute("CREATE TABLE ipc (numero_inpi VARCHAR, simbolo VARCHAR)")
     c.execute("CREATE TABLE biblio (numero_inpi VARCHAR, data_deposito VARCHAR)")
     c.execute("CREATE TABLE ipc_campo_tecnologico (ipc_subclasse VARCHAR, campo_tecnologico VARCHAR)")
-    c.execute("CREATE TABLE estatistica_nacional (ano INTEGER, campo_tecnologico VARCHAR, depositos INTEGER, concessoes INTEGER)")
+    c.execute("CREATE TABLE estatistica_nacional (ano INTEGER, tipo_ativo VARCHAR, "
+              "campo_tecnologico VARCHAR, decisao VARCHAR, depositos INTEGER, concessoes INTEGER)")
 
     c.execute("INSERT INTO procuradores VALUES ('P1', 'CLARKE MODET'), ('P2', 'CLARKE MODET')")
     c.execute("INSERT INTO escritorios VALUES ('CLARKE MODET', 'CLARKE MODET')")
     c.execute("INSERT INTO ipc VALUES ('P1', 'A61K0031'), ('P2', 'A61K0009')")
     c.execute("INSERT INTO biblio VALUES ('P1', '2023-05-01'), ('P2', '2023-06-01')")
-    c.execute("INSERT INTO ipc_campo_tecnologico VALUES ('A61K', 'Farmacêutica')")
-    c.execute("INSERT INTO estatistica_nacional VALUES (2023, 'Farmacêutica', 1000, 400)")
+    c.execute("INSERT INTO ipc_campo_tecnologico VALUES ('A61K', 'Química')")
+    # Cubo OLAP com fatias sobrepostas, como o dado real: so a linha de roll-up
+    # (decisao IS NULL) de tipo_ativo='Patentes' conta. As outras tres sao
+    # decoys -- somar tudo daria 2900 em vez de 1000 (C2).
+    c.execute("""INSERT INTO estatistica_nacional VALUES
+        (2023, 'Patentes', 'Química', NULL, 1000, 400),
+        (2023, 'Patentes', 'Química', 'Concessão', 400, 400),
+        (2023, 'Patentes', 'Química', 'Arquivamento', 600, 0),
+        (2023, 'Marcas',   'Química', NULL, 900, 300)""")
 
     def _linhas(sql, params=()):
         cur = c.execute(sql, params)
@@ -37,10 +45,12 @@ def con(monkeypatch):
 
 def test_benchmark_mercado_compara_carteira_com_nacional(con):
     r = bm.inpi_benchmark_mercado("CLARKE MODET", ano_inicial=2023, ano_final=2023,
-                                  campo_tecnologico="Farmacêutica")
+                                  campo_tecnologico="Química")
 
     assert r["carteira"]["depositos"] == 2
+    # 1000, nao 2900: so a linha de roll-up de Patentes entra na soma nacional.
     assert r["nacional"]["depositos"] == 1000
+    assert r["nacional"]["concessoes"] == 400
     assert r["share_mercado_pct"] == pytest.approx(0.2)
 
 

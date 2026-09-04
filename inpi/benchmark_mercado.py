@@ -3,7 +3,8 @@
 
 Depende de ipc_campo_tecnologico (inpi/ingest.py::_mescla_ipc_campo_tecnologico)
 para cruzar o codigo IPC da carteira com o campo_tecnologico da taxonomia
-WIPO-35 que estatistica_nacional usa -- sem essa tabela, so da pra comparar
+WIPO de 5 setores (Eletricidade, Instrumentos, Mecanica, Outros campos,
+Quimica) que estatistica_nacional usa -- sem essa tabela, so da pra comparar
 por ano/decisao (sem quebra por area tecnica)."""
 
 from __future__ import annotations
@@ -31,9 +32,11 @@ def inpi_benchmark_mercado(
         escritorio: grafia de escritorio (resolvida pela chave canonica, como
             em inpi_carteira).
         ano_inicial/ano_final: filtro de ano de deposito (inclusive).
-        campo_tecnologico: taxonomia WIPO-35 (ex.: 'Farmacêutica'). Sem
-            ipc_campo_tecnologico carregada, ignorado -- resultado sai sem
-            quebra por campo.
+        campo_tecnologico: taxonomia WIPO de 5 setores -- os UNICOS valores
+            aceitos sao 'Química', 'Eletricidade', 'Mecânica', 'Instrumentos'
+            e 'Outros campos' (nao e a WIPO-35: 'Farmacêutica' e afins nao
+            casam com nada). Sem ipc_campo_tecnologico carregada, ignorado --
+            resultado sai sem quebra por campo.
     """
     if not _tem_tabela("estatistica_nacional"):
         return {"erro": True, "mensagem": (
@@ -73,7 +76,14 @@ def inpi_benchmark_mercado(
         params_carteira,
     )[0]
 
-    cond_nac, params_nac = [], []
+    # estatistica_nacional e um CUBO OLAP com fatias sobrepostas: para a mesma
+    # celula existe a linha de roll-up (decisao IS NULL) E uma linha por
+    # decisao, todas com a mesma contagem -- somar tudo multiplica o total por
+    # ~12x (2020: 347.860 contra ~28 mil depositos de patente reais). Filtra
+    # tipo_ativo='Patentes' (ha marca/desenho no mesmo cubo) e a linha de
+    # roll-up, senao share_mercado_pct sai errado por ordens de grandeza.
+    cond_nac = ["tipo_ativo = 'Patentes'", "decisao IS NULL"]
+    params_nac: list = []
     if ano_inicial:
         cond_nac.append("ano >= ?")
         params_nac.append(ano_inicial)
@@ -83,7 +93,7 @@ def inpi_benchmark_mercado(
     if campo_tecnologico:
         cond_nac.append("campo_tecnologico = ?")
         params_nac.append(campo_tecnologico)
-    where_nac = ("WHERE " + " AND ".join(cond_nac)) if cond_nac else ""
+    where_nac = "WHERE " + " AND ".join(cond_nac)
 
     nacional = _linhas(
         f"SELECT sum(depositos) AS depositos, sum(concessoes) AS concessoes "
