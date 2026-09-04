@@ -29,6 +29,7 @@ BANCO = RAIZ / "data" / "inpi.duckdb"
 PROCURADORES_SIGILO = RAIZ / "referencias" / "procuradores-sigilo.csv"
 FICHA_EXTRAS = RAIZ / "referencias" / "ficha-extras.csv"
 ESTATISTICA_NACIONAL = RAIZ / "referencias" / "estatistica-nacional.csv"
+IPC_CAMPO_TECNOLOGICO = RAIZ / "referencias" / "ipc-campo-tecnologico.csv"
 
 # nome_da_tabela -> arquivo CSV
 TABELAS = {
@@ -435,6 +436,26 @@ def _mescla_estatistica_nacional(con) -> None:
     print(f"  estatistica_nacional {n:>7,} linhas   {time.time() - t0:5.1f}s", flush=True)
 
 
+def _mescla_ipc_campo_tecnologico(con) -> None:
+    """Carrega a concordancia publica e estatica IPC-subclasse -> campo
+    tecnologico WIPO-35 (mesma taxonomia que estatistica_nacional.campo_tecnologico
+    -- ver inpi/referencias/ipc-campo-tecnologico.csv). Dado publico, sem coleta
+    -- se o CSV nao existir ainda, a tabela simplesmente nao e criada (mesma
+    regra de tolerancia de _mescla_ficha_extras/_mescla_estatistica_nacional)."""
+    if not IPC_CAMPO_TECNOLOGICO.exists():
+        return
+    t0 = time.time()
+    caminho = IPC_CAMPO_TECNOLOGICO.as_posix()
+    con.execute(f"""
+      CREATE OR REPLACE TABLE ipc_campo_tecnologico AS
+      SELECT DISTINCT * FROM read_csv('{caminho}', header=true, delim=',',
+        quote='"', escape='"',
+        columns={{'ipc_subclasse': 'VARCHAR', 'campo_tecnologico': 'VARCHAR'}})
+    """)
+    n = con.execute("SELECT count(*) FROM ipc_campo_tecnologico").fetchone()[0]
+    print(f"  ipc_campo_tecnologico {n:>7,} linhas   {time.time() - t0:5.1f}s", flush=True)
+
+
 def main() -> int:
     if "--baixar" in sys.argv:
         print(f"Baixando de {BASE_URL}", flush=True)
@@ -482,6 +503,7 @@ def main() -> int:
     _mescla_procuradores_sigilo(con)
     _mescla_ficha_extras(con)
     _mescla_estatistica_nacional(con)
+    _mescla_ipc_campo_tecnologico(con)
     _materializa_nomes(con)
     _materializa_titulares(con)
     _vota_identidade(con)

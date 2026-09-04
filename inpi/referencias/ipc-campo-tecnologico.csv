@@ -1,0 +1,639 @@
+ipc_subclasse,campo_tecnologico
+A01B,Mecânica
+A01C,Mecânica
+A01D,Mecânica
+A01F,Mecânica
+A01G,Mecânica
+A01H,Química
+A01J,Mecânica
+A01K,Mecânica
+A01L,Mecânica
+A01M,Mecânica
+A01N,Química
+A01P,Química
+A21B,Mecânica
+A21C,Mecânica
+A21D,Química
+A22B,Mecânica
+A22C,Mecânica
+A23B,Química
+A23C,Química
+A23D,Química
+A23F,Química
+A23G,Química
+A23J,Química
+A23K,Química
+A23L,Química
+A23N,Mecânica
+A23P,Mecânica
+A24B,Outros campos
+A24C,Outros campos
+A24D,Outros campos
+A24F,Outros campos
+A41B,Outros campos
+A41C,Outros campos
+A41D,Outros campos
+A41F,Outros campos
+A41G,Outros campos
+A41H,Mecânica
+A42B,Outros campos
+A42C,Outros campos
+A43B,Outros campos
+A43C,Outros campos
+A43D,Mecânica
+A44B,Outros campos
+A44C,Outros campos
+A44D,Outros campos
+A45B,Outros campos
+A45C,Outros campos
+A45D,Outros campos
+A45F,Outros campos
+A46B,Outros campos
+A46D,Mecânica
+A47B,Outros campos
+A47C,Outros campos
+A47D,Outros campos
+A47F,Outros campos
+A47G,Outros campos
+A47H,Outros campos
+A47J,Outros campos
+A47K,Outros campos
+A47L,Outros campos
+A61B,Instrumentos
+A61C,Instrumentos
+A61D,Instrumentos
+A61F,Instrumentos
+A61G,Instrumentos
+A61H,Instrumentos
+A61J,Instrumentos
+A61K,Química
+A61L,Instrumentos
+A61M,Instrumentos
+A61N,Instrumentos
+A62B,Outros campos
+A62C,Química
+A62D,Química
+A63B,Outros campos
+A63C,Outros campos
+A63D,Outros campos
+A63F,Outros campos
+A63G,Outros campos
+A63H,Outros campos
+A63J,Outros campos
+A63K,Outros campos
+A99Z,Outros campos
+B01B,Química
+B01D,Química
+B01F,Química
+B01J,Química
+B01L,Química
+B02B,Mecânica
+B02C,Química
+B03B,Química
+B03C,Química
+B03D,Química
+B04B,Química
+B04C,Química
+B05B,Química
+B05C,Química
+B05D,Química
+B06B,Química
+B07B,Química
+B07C,Química
+B08B,Química
+B08C,Química
+B09B,Química
+B09C,Química
+B21B,Mecânica
+B21C,Mecânica
+B21D,Mecânica
+B21F,Mecânica
+B21G,Mecânica
+B21H,Mecânica
+B21J,Mecânica
+B21K,Mecânica
+B21L,Mecânica
+B22C,Química
+B22D,Química
+B22F,Química
+B23B,Mecânica
+B23C,Mecânica
+B23D,Mecânica
+B23F,Mecânica
+B23G,Mecânica
+B23H,Mecânica
+B23K,Mecânica
+B23P,Mecânica
+B23Q,Mecânica
+B24B,Mecânica
+B24C,Mecânica
+B24D,Mecânica
+B25B,Mecânica
+B25C,Mecânica
+B25D,Mecânica
+B25F,Mecânica
+B25G,Mecânica
+B25H,Mecânica
+B25J,Mecânica
+B26B,Mecânica
+B26D,Mecânica
+B26F,Mecânica
+B27B,Mecânica
+B27C,Mecânica
+B27D,Mecânica
+B27F,Mecânica
+B27G,Mecânica
+B27H,Mecânica
+B27J,Mecânica
+B27K,Mecânica
+B27L,Mecânica
+B27M,Mecânica
+B27N,Mecânica
+B28B,Mecânica
+B28C,Mecânica
+B28D,Mecânica
+B29B,Mecânica
+B29C,Mecânica
+B29D,Mecânica
+B29K,Mecânica
+B29L,Mecânica
+B30B,Mecânica
+B31B,Mecânica
+B31C,Mecânica
+B31D,Mecânica
+B31F,Mecânica
+B32B,Química
+B41B,Mecânica
+B41C,Mecânica
+B41D,Mecânica
+B41F,Mecânica
+B41G,Mecânica
+B41J,Mecânica
+B41K,Mecânica
+B41L,Mecânica
+B41M,Mecânica
+B41N,Mecânica
+B41P,Mecânica
+B42B,Outros campos
+B42C,Outros campos
+B42D,Outros campos
+B42F,Outros campos
+B42P,Outros campos
+B43K,Outros campos
+B43L,Outros campos
+B43M,Outros campos
+B44B,Outros campos
+B44C,Outros campos
+B44D,Outros campos
+B44F,Outros campos
+B60B,Mecânica
+B60C,Mecânica
+B60D,Mecânica
+B60F,Mecânica
+B60G,Mecânica
+B60H,Mecânica
+B60J,Mecânica
+B60K,Mecânica
+B60L,Mecânica
+B60M,Mecânica
+B60N,Mecânica
+B60P,Mecânica
+B60Q,Mecânica
+B60R,Mecânica
+B60S,Mecânica
+B60T,Mecânica
+B60V,Mecânica
+B60W,Mecânica
+B60Y,Mecânica
+B61B,Mecânica
+B61C,Mecânica
+B61D,Mecânica
+B61F,Mecânica
+B61G,Mecânica
+B61H,Mecânica
+B61J,Mecânica
+B61K,Mecânica
+B61L,Mecânica
+B62B,Mecânica
+B62C,Mecânica
+B62D,Mecânica
+B62H,Mecânica
+B62J,Mecânica
+B62K,Mecânica
+B62L,Mecânica
+B62M,Mecânica
+B63B,Mecânica
+B63C,Mecânica
+B63G,Mecânica
+B63H,Mecânica
+B63J,Mecânica
+B64B,Mecânica
+B64C,Mecânica
+B64D,Mecânica
+B64F,Mecânica
+B64G,Mecânica
+B65B,Mecânica
+B65C,Mecânica
+B65D,Mecânica
+B65F,Química
+B65G,Mecânica
+B65H,Mecânica
+B66B,Mecânica
+B66C,Mecânica
+B66D,Mecânica
+B66F,Mecânica
+B67B,Mecânica
+B67C,Mecânica
+B67D,Mecânica
+B68B,Outros campos
+B68C,Outros campos
+B68F,Outros campos
+B68G,Outros campos
+B81B,Química
+B81C,Química
+B82B,Química
+B82Y,Química
+B99Z,Mecânica
+C01B,Química
+C01C,Química
+C01D,Química
+C01F,Química
+C01G,Química
+C01P,Química
+C02F,Química
+C03B,Mecânica
+C03C,Química
+C04B,Química
+C05B,Química
+C05C,Química
+C05D,Química
+C05F,Química
+C05G,Química
+C06B,Química
+C06C,Química
+C06D,Química
+C07B,Química
+C07C,Química
+C07D,Química
+C07F,Química
+C07G,Química
+C07H,Química
+C07J,Química
+C07K,Química
+C08B,Química
+C08C,Química
+C08F,Química
+C08G,Química
+C08H,Química
+C08J,Mecânica
+C08K,Química
+C08L,Química
+C09B,Química
+C09C,Química
+C09D,Química
+C09F,Química
+C09G,Química
+C09H,Química
+C09K,Química
+C10B,Química
+C10C,Química
+C10F,Química
+C10G,Química
+C10H,Química
+C10J,Química
+C10K,Química
+C10L,Química
+C10M,Química
+C10N,Química
+C11B,Química
+C11C,Química
+C11D,Química
+C12C,Química
+C12F,Química
+C12G,Química
+C12H,Química
+C12J,Química
+C12L,Mecânica
+C12M,Química
+C12N,Química
+C12P,Química
+C12Q,Química
+C12R,Química
+C12S,Química
+C13C,Mecânica
+C13D,Química
+C13F,Química
+C13G,Mecânica
+C13H,Mecânica
+C13J,Química
+C13K,Química
+C14B,Mecânica
+C14C,Química
+C21B,Química
+C21C,Química
+C21D,Química
+C22B,Química
+C22C,Química
+C22F,Química
+C23C,Química
+C23D,Química
+C23F,Química
+C23G,Química
+C25B,Química
+C25C,Química
+C25D,Química
+C25F,Química
+C30B,Química
+C40B,Química
+C99Z,Química
+D01B,Mecânica
+D01C,Mecânica
+D01D,Mecânica
+D01F,Mecânica
+D01G,Mecânica
+D01H,Mecânica
+D02G,Mecânica
+D02H,Mecânica
+D02J,Mecânica
+D03C,Mecânica
+D03D,Mecânica
+D03J,Mecânica
+D04B,Mecânica
+D04C,Mecânica
+D04D,Outros campos
+D04G,Mecânica
+D04H,Mecânica
+D05B,Mecânica
+D05C,Mecânica
+D05D,Mecânica
+D06B,Química
+D06C,Química
+D06F,Outros campos
+D06G,Mecânica
+D06H,Mecânica
+D06J,Mecânica
+D06L,Química
+D06M,Mecânica
+D06N,Outros campos
+D06P,Mecânica
+D06Q,Mecânica
+D07B,Outros campos
+D21B,Mecânica
+D21C,Mecânica
+D21D,Mecânica
+D21F,Mecânica
+D21G,Mecânica
+D21H,Mecânica
+D21J,Mecânica
+D99Z,Mecânica
+E01B,Outros campos
+E01C,Outros campos
+E01D,Outros campos
+E01F,Outros campos
+E01H,Outros campos
+E02B,Outros campos
+E02C,Outros campos
+E02D,Outros campos
+E02F,Outros campos
+E03B,Outros campos
+E03C,Outros campos
+E03D,Outros campos
+E03F,Outros campos
+E04B,Outros campos
+E04C,Outros campos
+E04D,Outros campos
+E04F,Outros campos
+E04G,Outros campos
+E04H,Outros campos
+E05B,Outros campos
+E05C,Outros campos
+E05D,Outros campos
+E05F,Outros campos
+E05G,Outros campos
+E06B,Outros campos
+E06C,Outros campos
+E21B,Outros campos
+E21C,Outros campos
+E21D,Outros campos
+E21F,Outros campos
+E99Z,Outros campos
+F01B,Mecânica
+F01C,Mecânica
+F01D,Mecânica
+F01K,Mecânica
+F01L,Mecânica
+F01M,Mecânica
+F01N,Química
+F01P,Mecânica
+F02B,Mecânica
+F02C,Mecânica
+F02D,Mecânica
+F02F,Mecânica
+F02G,Mecânica
+F02K,Mecânica
+F02M,Mecânica
+F02N,Mecânica
+F02P,Mecânica
+F03B,Mecânica
+F03C,Mecânica
+F03D,Mecânica
+F03G,Mecânica
+F03H,Mecânica
+F04B,Mecânica
+F04C,Mecânica
+F04D,Mecânica
+F04F,Mecânica
+F15B,Mecânica
+F15C,Mecânica
+F15D,Mecânica
+F16B,Mecânica
+F16C,Mecânica
+F16D,Mecânica
+F16F,Mecânica
+F16G,Mecânica
+F16H,Mecânica
+F16J,Mecânica
+F16K,Mecânica
+F16L,Mecânica
+F16M,Mecânica
+F16N,Mecânica
+F16P,Mecânica
+F16S,Mecânica
+F16T,Mecânica
+F17B,Mecânica
+F17C,Mecânica
+F17D,Mecânica
+F21H,Eletricidade
+F21K,Eletricidade
+F21L,Eletricidade
+F21S,Eletricidade
+F21V,Eletricidade
+F21W,Eletricidade
+F21Y,Eletricidade
+F22B,Mecânica
+F22D,Mecânica
+F22G,Mecânica
+F23B,Mecânica
+F23C,Mecânica
+F23D,Mecânica
+F23G,Química
+F23H,Mecânica
+F23J,Química
+F23K,Mecânica
+F23L,Mecânica
+F23M,Mecânica
+F23N,Mecânica
+F23Q,Mecânica
+F23R,Mecânica
+F24B,Mecânica
+F24C,Mecânica
+F24D,Mecânica
+F24F,Mecânica
+F24H,Mecânica
+F25B,Mecânica
+F25C,Mecânica
+F25D,Outros campos
+F25J,Química
+F26B,Química
+F27B,Mecânica
+F27D,Mecânica
+F28B,Mecânica
+F28C,Mecânica
+F28D,Mecânica
+F28F,Mecânica
+F28G,Mecânica
+F41A,Mecânica
+F41B,Mecânica
+F41C,Mecânica
+F41F,Mecânica
+F41G,Mecânica
+F41H,Mecânica
+F41J,Mecânica
+F42B,Mecânica
+F42C,Mecânica
+F42D,Mecânica
+F99Z,Mecânica
+G01B,Instrumentos
+G01C,Instrumentos
+G01D,Instrumentos
+G01F,Instrumentos
+G01G,Instrumentos
+G01H,Instrumentos
+G01J,Instrumentos
+G01K,Instrumentos
+G01L,Instrumentos
+G01M,Instrumentos
+G01N,Instrumentos
+G01P,Instrumentos
+G01R,Instrumentos
+G01S,Instrumentos
+G01T,Química
+G01V,Instrumentos
+G01W,Instrumentos
+G02B,Instrumentos
+G02C,Instrumentos
+G02F,Instrumentos
+G03B,Instrumentos
+G03C,Instrumentos
+G03D,Instrumentos
+G03F,Instrumentos
+G03G,Instrumentos
+G03H,Instrumentos
+G04B,Instrumentos
+G04C,Instrumentos
+G04D,Instrumentos
+G04F,Instrumentos
+G04G,Instrumentos
+G04R,Instrumentos
+G05B,Instrumentos
+G05D,Instrumentos
+G05F,Instrumentos
+G05G,Mecânica
+G06F,Eletricidade
+G06K,Eletricidade
+G06N,Eletricidade
+G06Q,Eletricidade
+G06T,Eletricidade
+G07B,Instrumentos
+G07C,Instrumentos
+G07D,Instrumentos
+G07F,Instrumentos
+G07G,Instrumentos
+G08B,Instrumentos
+G08C,Eletricidade
+G08G,Instrumentos
+G09B,Instrumentos
+G09C,Instrumentos
+G09D,Instrumentos
+G09F,Eletricidade
+G09G,Eletricidade
+G10B,Outros campos
+G10C,Outros campos
+G10D,Outros campos
+G10F,Outros campos
+G10G,Outros campos
+G10H,Outros campos
+G10K,Outros campos
+G10L,Eletricidade
+G11B,Eletricidade
+G11C,Eletricidade
+G12B,Instrumentos
+G21B,Mecânica
+G21C,Mecânica
+G21D,Mecânica
+G21F,Mecânica
+G21G,Mecânica
+G21H,Mecânica
+G21J,Mecânica
+G21K,Mecânica
+G99Z,Instrumentos
+H01B,Eletricidade
+H01C,Eletricidade
+H01F,Eletricidade
+H01G,Eletricidade
+H01H,Eletricidade
+H01J,Eletricidade
+H01K,Eletricidade
+H01L,Eletricidade
+H01M,Eletricidade
+H01P,Eletricidade
+H01Q,Eletricidade
+H01R,Eletricidade
+H01S,Instrumentos
+H01T,Eletricidade
+H02B,Eletricidade
+H02G,Eletricidade
+H02H,Eletricidade
+H02J,Eletricidade
+H02K,Eletricidade
+H02M,Eletricidade
+H02N,Eletricidade
+H02P,Eletricidade
+H02S,Eletricidade
+H03B,Eletricidade
+H03C,Eletricidade
+H03D,Eletricidade
+H03F,Eletricidade
+H03G,Eletricidade
+H03H,Eletricidade
+H03J,Eletricidade
+H03K,Eletricidade
+H03L,Eletricidade
+H03M,Eletricidade
+H04B,Eletricidade
+H04H,Eletricidade
+H04J,Eletricidade
+H04K,Eletricidade
+H04L,Eletricidade
+H04M,Eletricidade
+H04N,Eletricidade
+H04Q,Eletricidade
+H04R,Eletricidade
+H04S,Eletricidade
+H05B,Eletricidade
+H05C,Eletricidade
+H05F,Eletricidade
+H05G,Instrumentos
+H05H,Química
+H05K,Eletricidade
+H99Z,Eletricidade
