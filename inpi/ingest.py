@@ -28,6 +28,7 @@ BRUTO = RAIZ / "data" / "raw"
 BANCO = RAIZ / "data" / "inpi.duckdb"
 PROCURADORES_SIGILO = RAIZ / "referencias" / "procuradores-sigilo.csv"
 FICHA_EXTRAS = RAIZ / "referencias" / "ficha-extras.csv"
+ESTATISTICA_NACIONAL = RAIZ / "referencias" / "estatistica-nacional.csv"
 
 # nome_da_tabela -> arquivo CSV
 TABELAS = {
@@ -406,6 +407,34 @@ def _mescla_ficha_extras(con) -> None:
     con.execute("DROP TABLE _fe_raw")
 
 
+def _mescla_estatistica_nacional(con) -> None:
+    """Cria a tabela estatistica_nacional a partir do CSV baixado do Portal de
+    Estatisticas publico do INPI (inpi/estatistica_publica.py) -- dataset
+    AGREGADO NACIONAL (nao por processo), usado por inpi_estatistica_nacional.
+    Fonte externa ao dump semanal de dados abertos: se o CSV nao existir ainda
+    (coleta nao rodou), a tabela simplesmente nao e criada -- mesma regra de
+    tolerancia de _mescla_ficha_extras."""
+    if not ESTATISTICA_NACIONAL.exists():
+        return
+    t0 = time.time()
+    caminho = ESTATISTICA_NACIONAL.as_posix()
+    con.execute(f"""
+      CREATE OR REPLACE TABLE estatistica_nacional AS
+      SELECT DISTINCT * FROM read_csv('{caminho}', header=true, delim=',',
+        quote='"', escape='"',
+        columns={{
+          'ano': 'INTEGER', 'tipo_ativo': 'VARCHAR', 'sub_tipo': 'VARCHAR',
+          'tipo_patente': 'VARCHAR', 'via_entrada': 'VARCHAR', 'origem': 'VARCHAR',
+          'pais': 'VARCHAR', 'uf': 'VARCHAR', 'regiao': 'VARCHAR',
+          'campo_tecnologico': 'VARCHAR', 'decisao': 'VARCHAR',
+          'ano_decisao': 'INTEGER', 'depositos': 'INTEGER', 'concessoes': 'INTEGER',
+          'n_decisoes': 'INTEGER', 'n_vigentes': 'INTEGER', 'coletado_em': 'VARCHAR'
+        }})
+    """)
+    n = con.execute("SELECT count(*) FROM estatistica_nacional").fetchone()[0]
+    print(f"  estatistica_nacional {n:>7,} linhas   {time.time() - t0:5.1f}s", flush=True)
+
+
 def main() -> int:
     if "--baixar" in sys.argv:
         print(f"Baixando de {BASE_URL}", flush=True)
@@ -452,6 +481,7 @@ def main() -> int:
     # servidor respondem igual -- a carteira Petrobras sai em 2 s de qualquer jeito.
     _mescla_procuradores_sigilo(con)
     _mescla_ficha_extras(con)
+    _mescla_estatistica_nacional(con)
     _materializa_nomes(con)
     _materializa_titulares(con)
     _vota_identidade(con)
