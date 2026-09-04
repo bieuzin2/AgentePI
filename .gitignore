@@ -32,3 +32,6 @@ vendor/
 .claude/skills/claude-skills/
 docs/relatorios/
 .tor/
+
+# worktrees isolados de execucao de plano (superpowers)
+.worktrees/
