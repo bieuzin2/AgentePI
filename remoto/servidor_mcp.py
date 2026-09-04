@@ -107,6 +107,8 @@ from inpi.perfil import inpi_perfil_titular
 from inpi.radar import inpi_radar
 from inpi.saude import carteira_saude
 from inpi.vigencia import carteira_auditoria_vigencia
+from inpi.estatistica_nacional import inpi_estatistica_nacional
+from inpi.benchmark_mercado import inpi_benchmark_mercado
 from landscape.carteira_bridge import cpcs_da_carteira, landscape_carteira
 from landscape.landscape_mcp import (
     landscape_co_classificacao,
@@ -138,8 +140,10 @@ TOOLS = [
     # 4 fontes em paralelo e pode estourar o timeout ~100s do Copilot Studio.
     reconciliar, fto_dominio_publico, inpi_responsavel_pi, inpi_gaps_protecao,
     inpi_anuidades_pagas, inpi_peticoes_escritorio,
-    # inteligencia analitica: motor de estatistica generico + stats de exigencias
+    # inteligencia analitica: motor de estatistica generico + stats de exigencias +
+    # agregado nacional publico + benchmark carteira-vs-mercado
     inpi_estatistica, inpi_exigencias_stats,
+    inpi_estatistica_nacional, inpi_benchmark_mercado,
     # landscape (BigQuery)
     landscape_evolucao_temporal, landscape_top_titulares,
     landscape_co_classificacao, landscape_perfil_titular,

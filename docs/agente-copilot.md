@@ -48,7 +48,8 @@ velho. Sempre que fizer deploy de uma tool nova, execute este runbook:
 4. **Caso B — conectado tool a tool** (cada ação adicionada individualmente): adicione as
    novas manualmente pelo mesmo fluxo das antigas: `inpi_anuidades_pagas`,
    `inpi_peticoes_escritorio`, `inpi_reconciliar`, `fto_dominio_publico`,
-   `inpi_gaps_protecao`, `inpi_responsavel_pi`.
+   `inpi_gaps_protecao`, `inpi_responsavel_pi`, `inpi_estatistica_nacional`,
+   `inpi_benchmark_mercado`.
    (Não sabe qual caso é o seu? Veja se na aba Tools existe UMA entrada do servidor
    `agente-pi` com várias ações dentro — Caso A — ou várias entradas soltas — Caso B.)
 5. **Generative orchestration LIGADA** (Configurações do agente) — MCP não funciona sem.
