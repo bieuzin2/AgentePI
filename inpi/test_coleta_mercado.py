@@ -29,7 +29,8 @@ def test_processar_lote_marca_sucesso_e_erro_na_fila():
          patch("inpi.coleta_mercado.marcar") as mock_marcar:
         resumo = mod.processar_lote(cliente, ["P1", "P2"])
 
-    mock_coletar.assert_called_once_with(cliente, ["P1", "P2"], escritorio_canonico=None)
+    mock_coletar.assert_called_once_with(cliente, ["P1", "P2"], escritorio_canonico=None,
+                                         paralelismo=8)
     mock_marcar.assert_any_call(["P1"], "coletado")
     mock_marcar.assert_any_call(["P2"], "erro")
     assert resumo == {"registrados": 1, "erros": 1}
@@ -71,3 +72,37 @@ def test_rodar_loop_para_em_bloqueio_sem_dormir(monkeypatch):
 
     mock_sleep.assert_not_called()
     Cliente.return_value.fechar.assert_called_once()
+
+
+def test_rodar_loop_sem_erro_nao_dorme_entre_lotes(monkeypatch):
+    """Lote saudavel (erros=0) nao deve pausar -- so bloqueio (ja coberto
+    acima) ou erro isolado (proximo teste) justificam sleep."""
+    monkeypatch.setenv("INPI_PAG_LOGIN_MERCADO", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD_MERCADO", "pass")
+
+    lotes = [["P1"], []]
+    with patch("inpi.coleta_mercado.ClientePlataformaNova"), \
+         patch("inpi.coleta_mercado.proximo_lote", side_effect=lotes), \
+         patch("inpi.coleta_mercado.processar_lote", return_value={"erros": 0}), \
+         patch("inpi.coleta_mercado.time.sleep") as mock_sleep:
+        mod.rodar_loop(tamanho_lote=1)
+
+    mock_sleep.assert_not_called()
+
+
+def test_rodar_loop_dorme_apos_erro_isolado_mas_continua(monkeypatch):
+    """Erro isolado (abaixo do limiar de bloqueio) pausa um pouco antes do
+    proximo lote -- respiro, nao evasao (deve_parar ja teria cortado se
+    fosse proporcao alta)."""
+    monkeypatch.setenv("INPI_PAG_LOGIN_MERCADO", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD_MERCADO", "pass")
+
+    lote_10 = [f"P{i}" for i in range(10)]
+    lotes = [lote_10, []]
+    with patch("inpi.coleta_mercado.ClientePlataformaNova"), \
+         patch("inpi.coleta_mercado.proximo_lote", side_effect=lotes), \
+         patch("inpi.coleta_mercado.processar_lote", return_value={"erros": 1}), \
+         patch("inpi.coleta_mercado.time.sleep") as mock_sleep:
+        mod.rodar_loop(tamanho_lote=10, limiar_bloqueio=0.5)
+
+    mock_sleep.assert_called_once_with(30)

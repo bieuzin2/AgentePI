@@ -15,6 +15,8 @@ continua vindo so do pePI.
 from __future__ import annotations
 
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any
 
@@ -69,35 +71,54 @@ def _nao_encontrado(exc: PlataformaNovaError) -> bool:
 def coletar_e_registrar(
     cliente: ClientePlataformaNova, numeros_inpi: list[str],
     escritorio_canonico: str, fonte: str = FONTE_PADRAO,
-    atualizar: bool = False,
+    atualizar: bool = False, paralelismo: int = 1,
 ) -> dict[str, Any]:
     """Para cada numero_inpi: busca biblio (pra CPC) + anuidades, mapeia pro
     shape do registrar() existente, grava. Erro de rede/API num processo NAO
     derruba o lote inteiro -- so conta e segue pro proximo. 'nao_encontrados'
     (lista, nao so contagem) e o residuo que coletar_com_fallback_pepi()
     reprocessa via pePI; 'erros' e falha genuina (rede/servidor), nao
-    reprocessada automaticamente."""
+    reprocessada automaticamente.
+
+    paralelismo>1 despara N threads batendo no MESMO ClientePlataformaNova
+    (httpx.Client -- pool de conexao thread-safe); os contadores de resumo
+    sao protegidos por lock, ordem de conclusao nao importa pro resultado
+    final. paralelismo=1 (default) mantem o for sequencial de sempre --
+    testes existentes que dependem de ORDEM de chamada (side_effect em
+    lista) continuam validos."""
     resumo: dict[str, Any] = {"registrados": 0, "sem_biblio": 0,
                               "ja_coletado_ou_invalido": 0, "erros": 0,
                               "nao_encontrados": []}
-    for numero_inpi in numeros_inpi:
+    lock = threading.Lock()
+
+    def _processar(numero_inpi: str) -> None:
         try:
             biblio = cliente.get_bibliographic_data(numero_inpi)
             if not biblio:
-                resumo["sem_biblio"] += 1
-                continue
+                with lock:
+                    resumo["sem_biblio"] += 1
+                return
             listagem = cliente.get_listing_data(numero_inpi, "anuidades")
             anuidades = [_mapear_anuidade(obj["value"])
                         for obj in listagem.get("objects", [])]
             campos = {"cpc": _extrair_cpc(biblio), "peticoes": [], "anuidades": anuidades}
             ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
                            date.today().isoformat(), atualizar=atualizar)
-            resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
+            with lock:
+                resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
         except (PlataformaNovaError, httpx.HTTPError) as exc:
-            if isinstance(exc, PlataformaNovaError) and _nao_encontrado(exc):
-                resumo["nao_encontrados"].append(numero_inpi)
-            else:
-                resumo["erros"] += 1
+            with lock:
+                if isinstance(exc, PlataformaNovaError) and _nao_encontrado(exc):
+                    resumo["nao_encontrados"].append(numero_inpi)
+                else:
+                    resumo["erros"] += 1
+
+    if paralelismo <= 1:
+        for numero_inpi in numeros_inpi:
+            _processar(numero_inpi)
+    else:
+        with ThreadPoolExecutor(max_workers=paralelismo) as executor:
+            list(executor.map(_processar, numeros_inpi))
     return resumo
 
 
@@ -113,9 +134,10 @@ def coletar_com_fallback_pepi(
     mesmo paralelismo/circuit-breaker de sempre). Import local de
     coleta_ficha_extras.varrer_e_registrar_paralelo pra nao forcar abertura
     de sessao Tor/pePI em quem so usa coletar_e_registrar (o caso comum,
-    moderno/sigilo, nunca precisa do pePI)."""
+    moderno/sigilo, nunca precisa do pePI). `paralelismo` vale pros DOIS
+    estagios (plataforma nova e fallback pePI)."""
     resumo = coletar_e_registrar(cliente, numeros_inpi, escritorio_canonico, fonte,
-                                 atualizar=atualizar)
+                                 atualizar=atualizar, paralelismo=paralelismo)
     residuo = resumo.pop("nao_encontrados")
     if not residuo:
         resumo["fallback_pepi"] = {"registrados": 0, "nao_encontrado": 0,

@@ -38,13 +38,16 @@ def deve_parar(resumo: dict, tamanho_lote: int, limiar: float = 0.3) -> bool:
     return (resumo.get("erros", 0) / tamanho_lote) > limiar
 
 
-def processar_lote(cliente: ClientePlataformaNova, lote: list[str]) -> dict:
-    """Roda um lote via coletar_com_fallback_pepi e marca a fila conforme o
-    resultado. 'sucesso' = numero_inpi presente em _coletados() (cache em
-    memoria de registrar(), atualizado nesta mesma chamada) apos rodar;
-    o resto vira 'erro' -- nao fica 'pendente' pra sempre, senao a fila
-    reprocessaria o mesmo item bloqueado a cada ciclo."""
-    resumo = coletar_com_fallback_pepi(cliente, lote, escritorio_canonico=None)
+def processar_lote(cliente: ClientePlataformaNova, lote: list[str],
+                   paralelismo: int = 8) -> dict:
+    """Roda um lote via coletar_com_fallback_pepi (paralelismo real dentro
+    do lote -- ver inpi.coleta_plataforma_nova.coletar_e_registrar) e marca
+    a fila conforme o resultado. 'sucesso' = numero_inpi presente em
+    _coletados() (cache em memoria de registrar(), atualizado nesta mesma
+    chamada) apos rodar; o resto vira 'erro' -- nao fica 'pendente' pra
+    sempre, senao a fila reprocessaria o mesmo item bloqueado a cada ciclo."""
+    resumo = coletar_com_fallback_pepi(cliente, lote, escritorio_canonico=None,
+                                       paralelismo=paralelismo)
     coletados_agora = _coletados()
     sucesso = [n for n in lote if n in coletados_agora]
     falha = [n for n in lote if n not in coletados_agora]
@@ -54,13 +57,19 @@ def processar_lote(cliente: ClientePlataformaNova, lote: list[str]) -> dict:
 
 
 def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
-              dormir_segundos: int = 60) -> None:
+              paralelismo: int = 8, dormir_segundos_em_erro: int = 30) -> None:
+    """Sem sleep fixo entre lotes saudaveis -- so pausa (`dormir_segundos_em_erro`)
+    quando o lote anterior teve QUALQUER erro, como respiro antes de tentar
+    de novo (nao e backoff pra evadir bloqueio: se a proporcao de erro
+    passar do limiar, para de vez, nao insiste com sleep nenhum -- ver
+    deve_parar()). Sem erro nenhum, emenda direto no proximo lote."""
     login = os.environ.get("INPI_PAG_LOGIN_MERCADO")
     senha = os.environ.get("INPI_PAG_PASSWORD_MERCADO")
     if not login or not senha:
         print("INPI_PAG_LOGIN_MERCADO/INPI_PAG_PASSWORD_MERCADO ausentes no "
               ".env -- crie uma credencial PAG separada da producao antes "
-              "de rodar isto (nunca reusar INPI_PAG_LOGIN de producao aqui).")
+              "de rodar isto (nunca reusar INPI_PAG_LOGIN de producao aqui).",
+              flush=True)
         return
 
     cliente = ClientePlataformaNova(login, senha)
@@ -68,15 +77,17 @@ def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
         while True:
             lote = proximo_lote(tamanho_lote)
             if not lote:
-                print("Fila vazia -- nada a coletar.")
+                print("Fila vazia -- nada a coletar.", flush=True)
                 return
-            resumo = processar_lote(cliente, lote)
-            print(f"Lote de {len(lote)}: {resumo}")
+            resumo = processar_lote(cliente, lote, paralelismo=paralelismo)
+            print(f"Lote de {len(lote)}: {resumo}", flush=True)
             if deve_parar(resumo, len(lote), limiar_bloqueio):
                 print(f"Proporcao de erro acima do limiar ({limiar_bloqueio:.0%}) "
-                      "-- possivel bloqueio. Parando (sem retomar sozinho).")
+                      "-- possivel bloqueio. Parando (sem retomar sozinho).",
+                      flush=True)
                 return
-            time.sleep(dormir_segundos)
+            if resumo.get("erros", 0) > 0:
+                time.sleep(dormir_segundos_em_erro)
     finally:
         cliente.fechar()
 

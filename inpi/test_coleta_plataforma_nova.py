@@ -184,3 +184,27 @@ def test_erro_de_rede_generico_conta_como_erro_nao_propaga(monkeypatch):
     assert resumo["erros"] == 1
     assert resumo["registrados"] == 1
     assert resumo["nao_encontrados"] == []
+
+
+def test_coletar_e_registrar_com_paralelismo_processa_tudo_e_soma_certo(monkeypatch):
+    """paralelismo>1 nao pode perder contagem nem duplicar -- soma dos
+    contadores deve bater com o total de numeros_inpi, nao importa a ordem
+    de conclusao das threads."""
+    cliente = MagicMock()
+
+    def _biblio(numero_inpi):
+        if numero_inpi == "P_ERRO":
+            raise PlataformaNovaError("status 500: erro interno")
+        return [{"inid": "52", "value": "A61K"}]
+
+    cliente.get_bibliographic_data.side_effect = _biblio
+    cliente.get_listing_data.return_value = {"objects": []}
+    monkeypatch.setattr(mod, "registrar", lambda *a, **k: True)
+
+    numeros = [f"P{i}" for i in range(20)] + ["P_ERRO"]
+    resumo = mod.coletar_e_registrar(cliente, numeros, escritorio_canonico=None,
+                                     paralelismo=8)
+
+    assert resumo["registrados"] == 20
+    assert resumo["erros"] == 1
+    assert resumo["sem_biblio"] == 0
