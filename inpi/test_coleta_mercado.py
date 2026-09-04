@@ -33,3 +33,41 @@ def test_processar_lote_marca_sucesso_e_erro_na_fila():
     mock_marcar.assert_any_call(["P1"], "coletado")
     mock_marcar.assert_any_call(["P2"], "erro")
     assert resumo == {"registrados": 1, "erros": 1}
+
+
+def test_rodar_loop_sem_credencial_nao_tenta_rede(monkeypatch, capsys):
+    monkeypatch.delenv("INPI_PAG_LOGIN_MERCADO", raising=False)
+    monkeypatch.delenv("INPI_PAG_PASSWORD_MERCADO", raising=False)
+
+    with patch("inpi.coleta_mercado.ClientePlataformaNova") as mock_cliente:
+        mod.rodar_loop()
+
+    mock_cliente.assert_not_called()
+    assert "INPI_PAG_LOGIN_MERCADO" in capsys.readouterr().out
+
+
+def test_rodar_loop_para_quando_fila_vazia(monkeypatch, capsys):
+    monkeypatch.setenv("INPI_PAG_LOGIN_MERCADO", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD_MERCADO", "pass")
+
+    with patch("inpi.coleta_mercado.ClientePlataformaNova") as Cliente, \
+         patch("inpi.coleta_mercado.proximo_lote", return_value=[]):
+        mod.rodar_loop()
+
+    Cliente.return_value.fechar.assert_called_once()
+    assert "vazia" in capsys.readouterr().out.lower()
+
+
+def test_rodar_loop_para_em_bloqueio_sem_dormir(monkeypatch):
+    monkeypatch.setenv("INPI_PAG_LOGIN_MERCADO", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD_MERCADO", "pass")
+
+    with patch("inpi.coleta_mercado.ClientePlataformaNova") as Cliente, \
+         patch("inpi.coleta_mercado.proximo_lote", return_value=["P1"]), \
+         patch("inpi.coleta_mercado.processar_lote",
+               return_value={"erros": 1}), \
+         patch("inpi.coleta_mercado.time.sleep") as mock_sleep:
+        mod.rodar_loop(tamanho_lote=1, limiar_bloqueio=0.3)
+
+    mock_sleep.assert_not_called()
+    Cliente.return_value.fechar.assert_called_once()

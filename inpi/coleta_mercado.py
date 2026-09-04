@@ -45,3 +45,35 @@ def processar_lote(cliente: ClientePlataformaNova, lote: list[str]) -> dict:
     marcar(sucesso, "coletado")
     marcar(falha, "erro")
     return resumo
+
+
+def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
+              dormir_segundos: int = 60) -> None:
+    login = os.environ.get("INPI_PAG_LOGIN_MERCADO")
+    senha = os.environ.get("INPI_PAG_PASSWORD_MERCADO")
+    if not login or not senha:
+        print("INPI_PAG_LOGIN_MERCADO/INPI_PAG_PASSWORD_MERCADO ausentes no "
+              ".env -- crie uma credencial PAG separada da producao antes "
+              "de rodar isto (nunca reusar INPI_PAG_LOGIN de producao aqui).")
+        return
+
+    cliente = ClientePlataformaNova(login, senha)
+    try:
+        while True:
+            lote = proximo_lote(tamanho_lote)
+            if not lote:
+                print("Fila vazia -- nada a coletar.")
+                return
+            resumo = processar_lote(cliente, lote)
+            print(f"Lote de {len(lote)}: {resumo}")
+            if deve_parar(resumo, len(lote), limiar_bloqueio):
+                print(f"Proporcao de erro acima do limiar ({limiar_bloqueio:.0%}) "
+                      "-- possivel bloqueio. Parando (sem retomar sozinho).")
+                return
+            time.sleep(dormir_segundos)
+    finally:
+        cliente.fechar()
+
+
+if __name__ == "__main__":
+    rodar_loop()
