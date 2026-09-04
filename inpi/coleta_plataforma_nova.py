@@ -56,14 +56,28 @@ def _extrair_cpc(biblio: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _nao_encontrado(exc: PlataformaNovaError) -> bool:
+    """Distingue 'processo nao existe na plataforma nova' (residuo esperado,
+    ~21% do formato legado, ver docs/pesquisa/inpi_plataforma_nova.md secao
+    5b) de erro de rede/servidor genuino -- so o primeiro caso deve cair pro
+    fallback do pePI. 'ncontrado' (sem o 'e' inicial) casa com a mensagem
+    mesmo quando o 'a' acentuado vem mal-decodificado pelo servidor."""
+    return "ncontrado" in str(exc)
+
+
 def coletar_e_registrar(
     cliente: ClientePlataformaNova, numeros_inpi: list[str],
     escritorio_canonico: str, fonte: str = FONTE_PADRAO,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Para cada numero_inpi: busca biblio (pra CPC) + anuidades, mapeia pro
     shape do registrar() existente, grava. Erro de rede/API num processo NAO
-    derruba o lote inteiro -- so conta em 'erros' e segue pro proximo."""
-    resumo = {"registrados": 0, "sem_biblio": 0, "ja_coletado_ou_invalido": 0, "erros": 0}
+    derruba o lote inteiro -- so conta e segue pro proximo. 'nao_encontrados'
+    (lista, nao so contagem) e o residuo que coletar_com_fallback_pepi()
+    reprocessa via pePI; 'erros' e falha genuina (rede/servidor), nao
+    reprocessada automaticamente."""
+    resumo: dict[str, Any] = {"registrados": 0, "sem_biblio": 0,
+                              "ja_coletado_ou_invalido": 0, "erros": 0,
+                              "nao_encontrados": []}
     for numero_inpi in numeros_inpi:
         try:
             biblio = cliente.get_bibliographic_data(numero_inpi)
@@ -77,6 +91,37 @@ def coletar_e_registrar(
             ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
                            date.today().isoformat())
             resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
-        except PlataformaNovaError:
-            resumo["erros"] += 1
+        except PlataformaNovaError as exc:
+            if _nao_encontrado(exc):
+                resumo["nao_encontrados"].append(numero_inpi)
+            else:
+                resumo["erros"] += 1
+    return resumo
+
+
+def coletar_com_fallback_pepi(
+    cliente: ClientePlataformaNova, numeros_inpi: list[str],
+    escritorio_canonico: str, fonte: str = FONTE_PADRAO, paralelismo: int = 4,
+) -> dict[str, Any]:
+    """Plataforma nova como fonte PRIMARIA pros tres recortes (moderno,
+    sigilo, legado -- todos validados, ver docs/pesquisa/inpi_plataforma_nova.md);
+    o residuo que ela devolver 'nao encontrado' (na pratica quase so formato
+    legado, ~21% dele) cai automaticamente pro pePI (inpi.coleta_ficha_extras,
+    mesmo paralelismo/circuit-breaker de sempre). Import local de
+    coleta_ficha_extras.varrer_e_registrar_paralelo pra nao forcar abertura
+    de sessao Tor/pePI em quem so usa coletar_e_registrar (o caso comum,
+    moderno/sigilo, nunca precisa do pePI)."""
+    resumo = coletar_e_registrar(cliente, numeros_inpi, escritorio_canonico, fonte)
+    residuo = resumo.pop("nao_encontrados")
+    if not residuo:
+        resumo["fallback_pepi"] = {"registrados": 0, "nao_encontrado": 0,
+                                   "ja_coletado_ou_invalido": 0}
+        return resumo
+
+    from inpi.coleta_ficha_extras import varrer_e_registrar_paralelo
+
+    resumo["fallback_pepi"] = varrer_e_registrar_paralelo(
+        residuo, escritorio_canonico, paralelismo=paralelismo,
+        fonte="pePI busca.inpi.gov.br (fallback da plataforma nova)",
+    )
     return resumo

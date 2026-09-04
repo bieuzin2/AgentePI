@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from inpi.coleta_plataforma_nova import (
     _extrair_cpc,
     _mapear_anuidade,
+    _nao_encontrado,
+    coletar_com_fallback_pepi,
     coletar_e_registrar,
 )
 from inpi.plataforma_nova import PlataformaNovaError
@@ -67,7 +69,8 @@ def test_coletar_e_registrar_chama_registrar_com_campos_mapeados(monkeypatch):
     resumo = coletar_e_registrar(cliente, ["102022010731"], "clarke")
 
     assert resumo == {"registrados": 1, "sem_biblio": 0,
-                      "ja_coletado_ou_invalido": 0, "erros": 0}
+                      "ja_coletado_ou_invalido": 0, "erros": 0,
+                      "nao_encontrados": []}
     (numero, campos, escritorio, fonte, coletado_em), kwargs = chamadas[0]
     assert numero == "102022010731"
     assert campos["cpc"] == "C08L 5/04"
@@ -88,7 +91,27 @@ def test_coletar_e_registrar_conta_erro_sem_derrubar_o_lote(monkeypatch):
     resumo = coletar_e_registrar(cliente, ["102022010731", "102022010732"], "clarke")
 
     assert resumo == {"registrados": 0, "sem_biblio": 0,
-                      "ja_coletado_ou_invalido": 0, "erros": 2}
+                      "ja_coletado_ou_invalido": 0, "erros": 2,
+                      "nao_encontrados": []}
+
+
+def test_coletar_e_registrar_separa_nao_encontrado_de_erro_generico(monkeypatch):
+    cliente = MagicMock()
+    cliente.get_bibliographic_data.side_effect = [
+        PlataformaNovaError('status 400: {"text":"Pedido de patente não encontrado"}'),
+        PlataformaNovaError("status 500: erro interno"),
+    ]
+    monkeypatch.setattr("inpi.coleta_plataforma_nova.registrar", lambda *a, **kw: True)
+
+    resumo = coletar_e_registrar(cliente, ["PI8502923", "102022010732"], "clarke")
+
+    assert resumo["nao_encontrados"] == ["PI8502923"]
+    assert resumo["erros"] == 1
+
+
+def test_nao_encontrado_detecta_mesmo_com_acento_malcodificado():
+    assert _nao_encontrado(PlataformaNovaError('"text":"Pedido de patente n�o encontrado"'))
+    assert not _nao_encontrado(PlataformaNovaError("status 500: timeout"))
 
 
 def test_coletar_e_registrar_sem_biblio_nao_chama_listing(monkeypatch):
@@ -100,3 +123,44 @@ def test_coletar_e_registrar_sem_biblio_nao_chama_listing(monkeypatch):
 
     assert resumo["sem_biblio"] == 1
     cliente.get_listing_data.assert_not_called()
+
+
+def test_coletar_com_fallback_pepi_sem_residuo_nao_chama_pepi(monkeypatch):
+    cliente = MagicMock()
+    cliente.get_bibliographic_data.return_value = [{"inid": "52", "value": "C08L 5/04"}]
+    cliente.get_listing_data.return_value = {"objects": []}
+    monkeypatch.setattr("inpi.coleta_plataforma_nova.registrar", lambda *a, **kw: True)
+
+    chamou_pepi = []
+    import inpi.coleta_ficha_extras as cfe
+    monkeypatch.setattr(cfe, "varrer_e_registrar_paralelo",
+                        lambda *a, **kw: chamou_pepi.append((a, kw)) or {})
+
+    resumo = coletar_com_fallback_pepi(cliente, ["102022010731"], "clarke")
+
+    assert chamou_pepi == []
+    assert resumo["fallback_pepi"] == {"registrados": 0, "nao_encontrado": 0,
+                                       "ja_coletado_ou_invalido": 0}
+    assert "nao_encontrados" not in resumo
+
+
+def test_coletar_com_fallback_pepi_roteia_residuo_pro_pepi(monkeypatch):
+    cliente = MagicMock()
+    cliente.get_bibliographic_data.side_effect = PlataformaNovaError(
+        '"text":"Pedido de patente não encontrado"')
+    monkeypatch.setattr("inpi.coleta_plataforma_nova.registrar", lambda *a, **kw: True)
+
+    chamadas_pepi = []
+    import inpi.coleta_ficha_extras as cfe
+    monkeypatch.setattr(
+        cfe, "varrer_e_registrar_paralelo",
+        lambda numeros, escritorio, **kw: chamadas_pepi.append((numeros, escritorio, kw))
+        or {"registrados": 1, "nao_encontrado": 0, "ja_coletado_ou_invalido": 0},
+    )
+
+    resumo = coletar_com_fallback_pepi(cliente, ["PI8502923"], "clarke")
+
+    assert chamadas_pepi[0][0] == ["PI8502923"]
+    assert chamadas_pepi[0][1] == "clarke"
+    assert resumo["fallback_pepi"] == {"registrados": 1, "nao_encontrado": 0,
+                                       "ja_coletado_ou_invalido": 0}
