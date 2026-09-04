@@ -27,19 +27,40 @@ colunas Anuidade, GRU, Prazo ordinário, Prazo extraordinário, Valor pago,
 Data de pagamento, Situação da averbação — exatamente a estrutura que falta
 hoje na ficha-extras.
 
-### O que não foi resolvido
-`getListingData` (o endpoint que traz Eventos e Anuidades) exige o
-`componentId` do widget **mais** algum contexto de sessão que não é só
-`processNumber` no body — testei mais de 10 combinações de payload
-(`processNumber`, `urlObject`, `filter`, `context`, replay de
-`getPageContent` antes da chamada) e todas retornaram
-`[formatProcessNumber] Necessário informar o número do processo`, um erro
-gerado **no backend** (stack trace `com.levty.levtyComponents...`), não no
-bundle JS que dá pra grepar. Isso sugere que o dado do processo é resolvido
-no servidor a partir de estado de sessão associado à navegação completa (não
-só o body do POST), o que **não é uma chamada HTTP standalone trivial** —
-precisaria de mais engenharia reversa (proxy MITM na sessão real do
-navegador, não só grep de bundle) pra fechar o payload exato.
+### Atualização 2026-09-04 (sessão 2): `getListingData` resolvido
+
+O bloqueio acima foi fechado na mesma sessão em que o usuário capturou o
+request real da UI via DevTools (Network tab, "Copy as cURL") clicando na
+aba Anuidades de um processo carregado. O campo que faltava era
+**`urlObjectId`** — não `processNumber`, não `urlObject`, não
+`referenceObject._id` (nenhuma das mais de 10 variações testadas por HTTP
+puro nesta sessão usava esse nome). Payload completo confirmado:
+
+```json
+{
+  "componentId": "68b5e7a93cf0f00ea5057fb3",
+  "customQuery": [],
+  "customSort": null,
+  "pageIndex": 0,
+  "urlObjectId": "<numero 12 digitos>"
+}
+```
+`componentId` é fixo por aba: `68b1f6ee6715845371898232` (Eventos de
+Pedido) e `68b5e7a93cf0f00ea5057fb3` (Anuidades) — são IDs do widget
+`lvt-listing-objects` na página, não mudam por processo. Resposta:
+`{"total": int, "objects": [{"value": [...]}]}`, onde cada `value` é a
+linha da tabela na ordem visível na UI (Anuidade, GRU, prazo ordinário,
+prazo extraordinário, valor pago, data de pagamento, situação da averbação
+em HTML).
+
+**Login nativo também confirmado, 100% headless:**
+```
+POST /api/1/servicedesk-embedded/sys/auth/signIn/defaultAuthenticatorCustomer
+{"userLogin": "...", "userPassword": "..."}
+```
+devolve `accessToken.token` (JWT) + `accessToken.payload.exp`. Testado
+**sem cookies**, só `Authorization: Bearer <token>` — funciona standalone,
+sem navegador, sem sessão prévia. Implementado em `inpi/plataforma_nova.py`.
 
 `/swagger` em `servicos.patentes.inpi.gov.br` devolve 200, mas é falso
 positivo: a SPA serve fallback 200 pra qualquer rota client-side (não é doc
@@ -65,14 +86,9 @@ dedicada como "cliente" pessoa física. (A documentação pública não deixa
 explícito se CPF é obrigatório no formulário, mas nada indica exigência de
 vínculo com processos/clientes existentes.)
 
-**Não testei o POST de login em si** (usuário/senha → token/cookie) porque a
-sessão do navegador já estava autenticada, e inspecionar o formulário de
-login exigiria deslogar — o que eu não faço, por não poder inserir senha em
-nome do usuário (regra de segurança desta sessão). Ação pendente pro usuário:
-abrir uma aba anônima, ir até a tela de login nativo (usuário/senha, "não é
-gov.br"), abrir DevTools → Network, submeter o login manualmente, e me
-mandar o request (URL, body, resposta) capturado — com isso dá pra confirmar
-se é um POST simples reproduzível via `requests`/`httpx`.
+**Atualizado:** o usuário capturou o POST de login real (mesma técnica do
+`getListingData`) — confirma exatamente o formato acima. Login headless
+funcionando, implementado e testado.
 
 ## 3. Rate limits / Termos de Uso
 
@@ -93,50 +109,78 @@ protocoladas estruturadas (o conteúdo visível não confirma isso; precisaria
 baixar um arquivo de amostra pra checar o dicionário de dados). Sem
 OpenAPI/Swagger documentado em lugar nenhum.
 
-## 5. Comparação pePI+Tor vs. plataforma nova
+## 5. Validação de volume (2026-09-04, rodada real)
+
+`inpi/validar_plataforma_nova.py` rodou contra 530 processos reais já
+cobertos pelo pePI (`ficha_extras`), amostra dividida entre "recentes"
+(depósito nos últimos 45 dias) e "antigos", excluindo formato legado
+`PIxxxxxxx` (a plataforma nova só aceita o formato moderno de 12 dígitos —
+uma primeira rodada sem esse filtro tinha 13,6% de "erro" nos antigos, mas
+100% eram números em formato legado, não falha real da API).
+
+**Resultado, formato moderno apenas:**
+
+| Grupo | Total | Sucesso | Indexado | Taxa |
+|---|---|---|---|---|
+| Recentes (≤45 dias) | 30 | 30 | 30 | 100% |
+| Antigos | 500 | 500 | 500 | 100% |
+
+Zero erros, zero exemplos de falha. A hipótese original do usuário
+("depósitos recentes podem só estar no pePI") **não se confirmou** nesta
+amostra — cobertura foi perfeita nos dois grupos. Nenhum sinal de
+rate-limit/bloqueio em ~1600 requisições (530 processos × 3 chamadas)
+concentradas em poucos minutos com uma única conta.
+
+Limite da amostra: só cobre processos que o pePI já tinha coletado
+(`ficha_extras`), então não testa processos que o pePI NUNCA viu. E é
+formato moderno apenas — cobertura de processos legado (`PIxxxxxxx`,
+~55% da base histórica) na plataforma nova **continua desconhecida**.
+
+## 6. Comparação pePI+Tor vs. plataforma nova
 
 | | pePI + Tor (atual) | Plataforma nova (RPC Sydle) |
 |---|---|---|
-| Requisições por processo | 2 (busca + GET ficha) | pelo menos 3 (getProcessNumber + getBibliographicData + getListingData×2, se o payload for resolvido) |
-| Parsing | HTML frágil | JSON estruturado (biblio confirmado; anuidades ainda não replicável fora do navegador) |
-| Autenticação | anônima | login PAG obrigatório, sessão por conta |
-| Precisa de Tor | sim (IP direto já levou bloqueio) | desconhecido — nenhum bloqueio observado, mas teste foi pequeno e logado com sessão de navegador real, não em massa |
-| Cobertura de dado | anuidades+petições completo hoje | biblio+CPC confirmado; **anuidades só confirmado via UI**, não via chamada HTTP direta ainda |
-| Throughput testado | ~45-50 fichas/min | não testado em volume |
+| Requisições por processo | 2 (busca + GET ficha) | 3 (getBibliographicData + getListingData×2) |
+| Parsing | HTML frágil | JSON estruturado |
+| Autenticação | anônima | login PAG headless, testado sem cookies |
+| Precisa de Tor | sim (IP direto já levou bloqueio) | não — zero bloqueio em ~1600 chamadas |
+| Cobertura de dado | anuidades+petições completo, qualquer formato | biblio+CPC+anuidades confirmado, **só formato moderno** (legado não testado) |
+| Throughput testado | ~45-50 fichas/min | não medido em rajada máxima; 530 processos em poucos minutos sem erro |
 
-## 6. Opções de arquitetura
+## 7. Opções de arquitetura
 
-**A. Manter pePI+Tor+GitHub Actions como está, ignorar a plataforma nova por
-ora.** Menor risco, zero trabalho novo, mas continua limitado a ~45-50/min e
-depende de scraping de HTML frágil e Tor.
+**A. Manter pePI+Tor+GitHub Actions como está.** Não faz mais sentido como
+única via — a plataforma nova está validada e sem Tor.
 
-**B. Plataforma nova substitui pePI inteiro.** Só vale a pena SE alguém
-fechar o payload de `getListingData` (a parte que faltou nesta sessão) e
-confirmar que o rate-limit por conta aguenta volume de produção sem bloqueio.
-Hoje é uma aposta, não um plano executável.
+**B. Plataforma nova substitui pePI inteiro, corte imediato.** Arriscado:
+não testamos cobertura de formato legado (~55% da base histórica) nem
+volume em escala de produção (530 é uma amostra, não o backlog completo de
+centenas de milhares).
 
-**C. Híbrido — recomendado.** Usar a plataforma nova só pra biblio/CPC
-(`getBibliographicData`, já 100% funcional e replicável em `requests` puro,
-sem Tor, sem parsing de HTML) e manter pePI+Tor pra anuidades/petições até
-alguém investir o tempo de reverse-engineering do `getListingData` (ou obter
-a especificação direto com o INPI/suporte). Ganho imediato e de baixo risco:
-tira carga do pePI pro que já está resolvido, sem apostar o backlog inteiro
-numa API cujo endpoint principal (anuidades) ainda não foi fechado.
+**C. Corte validado, por partes — recomendado.** Já implementado em
+`inpi/coleta_plataforma_nova.py` (reusa `registrar()` do ficha-extras
+existente, mesmo CSV/schema). Rollout:
+1. Processos formato moderno com depósito recente: já validado, pode migrar.
+2. Processos formato moderno mais antigos: já validado (500/500), pode migrar.
+3. Processos formato legado (`PIxxxxxxx`): **ainda não testado contra a
+   plataforma nova** — pePI continua sendo a fonte até alguém rodar essa
+   validação (adaptar `amostrar_processos` pra incluir `LIKE 'PI%'` e ver o
+   que a API responde pra esse formato, provavelmente rejeitado).
 
 ### Recomendação
 
-Seguir com **C**: pipeline GitHub Actions já desenhado continua carregando
-anuidades/petições via pePI+Tor sem mudança; abrir uma tarefa separada,
-pequena e de baixo risco, pra usar `getBibliographicData` (login PAG com
-conta dedicada nova) como fonte alternativa de CPC/biblio — sem tocar no
-que já funciona. Só reconsiderar B se o `getListingData` for fechado e um
-teste de volume real (centenas de chamadas seguidas, mesma conta) não mostrar
-bloqueio.
+Seguir com **C**: migrar o formato moderno pra plataforma nova (já
+implementado e validado, zero erro em 530 amostras), manter pePI+Tor vivo
+só pro recorte legado até validar separadamente. `inpi/coleta_ficha_extras.py`/
+`inpi/tor_proxy.py` continuam intactos no repo como fallback permanente
+pra esse recorte, não como contingência temporária.
 
 ## Pendências pro usuário
 
-1. Capturar o POST de login nativo (usuário/senha) numa aba anônima e me
-   mandar request+resposta.
-2. Se quiser perseguir a via B, alguém precisa investigar `getListingData`
-   com um proxy MITM (mitmproxy/Charles) na sessão real do navegador — grep
-   de bundle client-side não foi suficiente porque a validação é no backend.
+1. Testar cobertura de formato legado (`PIxxxxxxx`) na plataforma nova —
+   sem isso, não dá pra decidir se o pePI fica só como fallback de
+   contingência ou como fonte permanente pra ~55% da base histórica.
+2. Se quiser medir throughput em rajada maior (a validação rodou 530
+   processos sequenciais com 0,2s de intervalo, não testou paralelismo nem
+   volume de produção completo), rodar `validar_plataforma_nova.py` com
+   `tamanho` maior antes de migrar o backlog inteiro.
