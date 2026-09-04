@@ -14,7 +14,9 @@ O que sobe e o que nao sobe (decisao, nao esquecimento):
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -31,11 +33,45 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # de ingest.main() apagar e recriar o .duckdb. E contra ela que o diff roda.
 BANCO_ANTERIOR = BANCO_INPI.with_name("inpi_anterior.duckdb")
 
+# Resultado do ULTIMO sync. Existe porque vigilancia.reingestao apaga e recria
+# inpi_anterior.duckdb toda semana, com sync bem-sucedido ou nao: sem este
+# marcador, um sync que falhou no meio (remoto ja parcialmente alterado) fazia
+# a rodada seguinte diffar contra a base errada e o MotherDuck derivava em
+# silencio pra sempre. Sync anterior nao-ok => reconstrucao completa.
+STATUS_SYNC = Path(__file__).resolve().parent / "data" / "ultimo_sync_status.json"
+
 # Tabelas derivadas (materializadas por inpi/ingest.py a partir das de cima) que
 # tambem precisam ir para o MotherDuck -- sem elas o agente remoto perde
 # titular/escritorio resolvidos e a ficha-extras.
 TABELAS_DERIVADAS = ("titulares", "escritorios", "identidade_escritorio",
                      "ficha_extras", "ficha_peticoes", "ficha_anuidades")
+
+
+def _registra_status(r: dict) -> dict:
+    """Grava o desfecho do sync e devolve o proprio resultado (para usar em
+    `return _registra_status({...})`). Sync pulado por falta de token nao
+    conta como falha -- nada foi tocado no remoto, o estado anterior segue
+    valendo."""
+    if r.get("pulado"):
+        return r
+    STATUS_SYNC.parent.mkdir(parents=True, exist_ok=True)
+    STATUS_SYNC.write_text(json.dumps({
+        "ok": bool(r.get("ok")),
+        "quando": datetime.now(timezone.utc).isoformat(),
+        "mensagem": r.get("mensagem", ""),
+    }, ensure_ascii=False), encoding="utf-8")
+    return r
+
+
+def _ultimo_sync_ok() -> bool:
+    """True quando nao ha registro (primeira rodada -- nada a desconfiar) ou o
+    ultimo sync terminou ok."""
+    if not STATUS_SYNC.exists():
+        return True
+    try:
+        return bool(json.loads(STATUS_SYNC.read_text(encoding="utf-8")).get("ok"))
+    except (json.JSONDecodeError, OSError):
+        return False  # marcador ilegivel: assume o pior e reconstroi
 
 
 def sincronizar() -> dict:
@@ -53,11 +89,11 @@ def sincronizar() -> dict:
                 caminho = str(BANCO_INPI).replace("'", "''")
                 con.execute(f"CREATE OR REPLACE DATABASE inpi FROM '{caminho}'")
                 enviados.append("inpi (completo)")
-            return {"ok": True, "enviados": enviados}
+            return _registra_status({"ok": True, "enviados": enviados})
         finally:
             con.close()
     except Exception as exc:  # rede/MotherDuck fora: loga, nao derruba a ingestao
-        return {"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"}
+        return _registra_status({"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"})
 
 
 def _colunas(con: duckdb.DuckDBPyConnection, tabela: str) -> list[str]:
@@ -117,18 +153,26 @@ def sincronizar_incremental() -> dict:
       - nao ha inpi_anterior.duckdb pra comparar (primeira vez, ou a rodada
         anterior nao deixou copia por algum motivo) -- sem base, nao ha diff
         possivel, so reconstrucao total mesmo;
+      - o ULTIMO sync registrado (STATUS_SYNC) nao terminou ok. Ai o remoto
+        esta num estado desconhecido (o diff daquela rodada pode ter aplicado
+        metade dos DELETE/INSERT) e o inpi_anterior.duckdb que existe e o da
+        reingestao desta semana, nao o baseline que o remoto reflete --
+        diffar contra ele faria o remoto derivar em silencio;
       - qualquer tabela nao existir ainda no remoto ou na copia antiga (schema
         novo) -- sobe essa tabela inteira via CREATE OR REPLACE, sem tentar
         diff contra o que nao existe.
 
     Se QUALQUER erro no meio (rede, coluna incompativel etc.), devolve
-    ok=False sem propagar -- mesma regra do resto deste modulo. Nesse caso
-    inpi_anterior.duckdb E MANTIDO (nao apaga), pra proxima rodada poder tentar
-    de novo ou pra investigacao manual; so apaga apos sync com sucesso.
+    ok=False sem propagar -- mesma regra do resto deste modulo, e o desfecho
+    fica gravado em STATUS_SYNC para a proxima rodada reconstruir do zero.
     """
     if not BANCO_ANTERIOR.exists():
         r = sincronizar()
         r["modo"] = "completo (sem copia anterior para comparar)"
+        return r
+    if not _ultimo_sync_ok():
+        r = sincronizar()
+        r["modo"] = "completo (sync anterior falhou -- baseline nao confiavel)"
         return r
 
     token = os.environ.get("MOTHERDUCK_TOKEN")
@@ -136,12 +180,13 @@ def sincronizar_incremental() -> dict:
         return {"ok": False, "pulado": True,
                 "mensagem": "MOTHERDUCK_TOKEN ausente -- sync pulado."}
     if not BANCO_INPI.exists():
-        return {"ok": False, "mensagem": "inpi.duckdb novo nao existe -- rode a ingestao antes."}
+        return _registra_status(
+            {"ok": False, "mensagem": "inpi.duckdb novo nao existe -- rode a ingestao antes."})
 
     try:
         con = duckdb.connect(str(BANCO_INPI))
     except Exception as exc:
-        return {"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"}
+        return _registra_status({"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"})
 
     try:
         antigo = str(BANCO_ANTERIOR).replace("'", "''")
@@ -170,11 +215,11 @@ def sincronizar_incremental() -> dict:
             resultados.append(_diff_tabela(con, tabela))
     except Exception as exc:
         con.close()
-        return {"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"}
+        return _registra_status({"ok": False, "mensagem": f"{type(exc).__name__}: {exc}"})
 
     con.close()
     BANCO_ANTERIOR.unlink(missing_ok=True)
-    return {"ok": True, "modo": "incremental", "tabelas": resultados}
+    return _registra_status({"ok": True, "modo": "incremental", "tabelas": resultados})
 
 
 def sincronizar_sigilo_incremental() -> dict:

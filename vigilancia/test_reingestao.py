@@ -42,7 +42,12 @@ def test_sem_banco_previo_nao_quebra(monkeypatch, tmp_path):
 def test_descarta_anterior_obsoleto_de_rodada_que_falhou_antes_do_sync(monkeypatch, tmp_path):
     """Se uma rodada anterior deixou inpi_anterior.duckdb (ex.: o sync falhou
     antes de consumi-lo e apagar), a proxima reingestao NAO deve empilhar por
-    cima -- descarta o obsoleto e guarda so a geracao mais recente."""
+    cima -- descarta o obsoleto e guarda so a geracao mais recente.
+
+    Quem protege o MotherDuck de diffar contra esse baseline errado NAO e este
+    modulo, e sync_motherduck.STATUS_SYNC: sync anterior nao-ok => aquela
+    rodada reconstroi o remoto inteiro em vez de confiar no incremental
+    (ver test_incremental_apos_falha_forca_reconstrucao_completa)."""
     banco = tmp_path / "inpi.duckdb"
     banco.write_bytes(b"semana atual")
     anterior = tmp_path / "inpi_anterior.duckdb"

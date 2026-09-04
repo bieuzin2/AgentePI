@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import duckdb
+import pytest
 
 import vigilancia.sync_motherduck as sync
+
+
+@pytest.fixture(autouse=True)
+def status_isolado(monkeypatch, tmp_path):
+    """O marcador de desfecho do sync (STATUS_SYNC) e estado real em
+    vigilancia/data -- nenhum teste pode escrever no de producao."""
+    caminho = tmp_path / "ultimo_sync_status.json"
+    monkeypatch.setattr(sync, "STATUS_SYNC", caminho)
+    return caminho
 
 
 def test_diff_tabela_insere_atualiza_e_remove(tmp_path):
@@ -85,6 +96,51 @@ def test_incremental_conecta_no_banco_novo_e_anexa_antigo_e_remoto(monkeypatch, 
     assert any(s == "ATTACH 'md:inpi' AS remoto" for s in sqls)
     assert r == {"ok": True, "modo": "incremental", "tabelas": []}
     assert not anterior.exists()  # apagada apos sucesso
+
+
+def test_incremental_apos_falha_forca_reconstrucao_completa(monkeypatch, tmp_path,
+                                                            status_isolado):
+    """C4: reingestao.reingerir() recria inpi_anterior.duckdb toda semana, com
+    sync bem-sucedido ou nao. Se o sync passado falhou no meio, o remoto esta
+    num estado desconhecido e o 'anterior' desta semana NAO e o baseline que
+    ele reflete -- diffar contra ele faz o remoto derivar em silencio."""
+    anterior = tmp_path / "inpi_anterior.duckdb"
+    anterior.touch()
+    monkeypatch.setattr(sync, "BANCO_ANTERIOR", anterior)
+    status_isolado.write_text(json.dumps({"ok": False, "quando": "2026-08-30T00:00:00Z"}),
+                              encoding="utf-8")
+
+    with patch.object(sync, "sincronizar", return_value={"ok": True, "enviados": []}) as m:
+        r = sync.sincronizar_incremental()
+
+    m.assert_called_once()
+    assert r["modo"] == "completo (sync anterior falhou -- baseline nao confiavel)"
+
+
+def test_incremental_registra_desfecho_para_a_proxima_rodada(monkeypatch, tmp_path,
+                                                             status_isolado):
+    anterior = tmp_path / "inpi_anterior.duckdb"
+    anterior.touch()
+    novo = tmp_path / "inpi.duckdb"
+    novo.touch()
+    monkeypatch.setattr(sync, "BANCO_ANTERIOR", anterior)
+    monkeypatch.setattr(sync, "BANCO_INPI", novo)
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "tok")
+
+    with patch.object(sync.duckdb, "connect", side_effect=OSError("rede fora")):
+        r = sync.sincronizar_incremental()
+
+    assert r["ok"] is False
+    assert json.loads(status_isolado.read_text(encoding="utf-8"))["ok"] is False
+    assert sync._ultimo_sync_ok() is False
+
+
+def test_sem_token_nao_marca_falha(monkeypatch, status_isolado):
+    """Sync pulado nao tocou no remoto -- nao pode invalidar o baseline."""
+    monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+    sync.sincronizar()
+    assert not status_isolado.exists()
+    assert sync._ultimo_sync_ok() is True
 
 
 def test_sem_token_pula(monkeypatch):
