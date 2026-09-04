@@ -60,3 +60,40 @@ def test_proximo_lote_ignora_ja_coletados(monkeypatch, tmp_path):
     con.close()
 
     assert fila.proximo_lote(10) == ["N2"]
+
+
+def test_popular_nacional_insere_apenas_depositos_recentes_e_novos(monkeypatch, tmp_path):
+    banco_fila = tmp_path / "fila_mercado.duckdb"
+    monkeypatch.setattr(fila, "BANCO_FILA", banco_fila)
+
+    banco_inpi = tmp_path / "inpi.duckdb"
+    con_inpi = duckdb.connect(str(banco_inpi))
+    con_inpi.execute("CREATE TABLE biblio (numero_inpi VARCHAR, data_deposito DATE)")
+    con_inpi.execute(
+        "INSERT INTO biblio VALUES "
+        "('P1', DATE '2021-01-01'), "  # recente, mas ja esta na fila
+        "('P2', DATE '2015-01-01'), "  # antigo, nao deve entrar
+        "('P3', DATE '2022-01-01')"    # recente e novo, deve entrar
+    )
+    con_inpi.close()
+    monkeypatch.setattr(fila, "_con_inpi",
+                        lambda: duckdb.connect(str(banco_inpi), read_only=True))
+
+    # P1 ja esta na fila (de popular_concorrentes, por ex.) -- nao duplica.
+    con = fila._con()
+    con.execute(
+        "INSERT INTO fila_mercado VALUES "
+        "('P1', 'concorrente', 'pendente', 0, '2026-09-01')"
+    )
+    con.close()
+
+    resultado = fila.popular_nacional(desde="2020-01-01")
+
+    con = fila._con()
+    linhas = con.execute(
+        "SELECT numero_inpi, origem FROM fila_mercado ORDER BY numero_inpi"
+    ).fetchall()
+    con.close()
+
+    assert resultado == {"inseridos": 1}
+    assert linhas == [("P1", "concorrente"), ("P3", "nacional")]  # P1 nao duplicou, P2 ficou de fora
