@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
+
+import inpi.coleta_plataforma_nova as mod
 from inpi.coleta_plataforma_nova import (
     _extrair_cpc,
     _mapear_anuidade,
@@ -164,3 +167,20 @@ def test_coletar_com_fallback_pepi_roteia_residuo_pro_pepi(monkeypatch):
     assert chamadas_pepi[0][1] == "clarke"
     assert resumo["fallback_pepi"] == {"registrados": 1, "nao_encontrado": 0,
                                        "ja_coletado_ou_invalido": 0}
+
+
+def test_erro_de_rede_generico_conta_como_erro_nao_propaga(monkeypatch):
+    cliente = MagicMock()
+    cliente.get_bibliographic_data.side_effect = [
+        httpx.ConnectError("conexao recusada"),  # P1: erro de rede cru
+        [{"inid": "52", "value": "A61K"}],        # P2: sucesso
+    ]
+    cliente.get_listing_data.return_value = {"objects": []}
+
+    monkeypatch.setattr(mod, "registrar", lambda *a, **k: True)
+
+    resumo = mod.coletar_e_registrar(cliente, ["P1", "P2"], escritorio_canonico=None)
+
+    assert resumo["erros"] == 1
+    assert resumo["registrados"] == 1
+    assert resumo["nao_encontrados"] == []

@@ -18,6 +18,7 @@ import re
 from datetime import date
 from typing import Any
 
+import httpx
 from bs4 import BeautifulSoup
 
 from inpi.coleta_ficha_extras import registrar
@@ -92,8 +93,8 @@ def coletar_e_registrar(
             ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
                            date.today().isoformat(), atualizar=atualizar)
             resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
-        except PlataformaNovaError as exc:
-            if _nao_encontrado(exc):
+        except (PlataformaNovaError, httpx.HTTPError) as exc:
+            if isinstance(exc, PlataformaNovaError) and _nao_encontrado(exc):
                 resumo["nao_encontrados"].append(numero_inpi)
             else:
                 resumo["erros"] += 1
