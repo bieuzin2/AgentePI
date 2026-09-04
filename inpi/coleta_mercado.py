@@ -30,3 +30,18 @@ def deve_parar(resumo: dict, tamanho_lote: int, limiar: float = 0.3) -> bool:
     if tamanho_lote == 0:
         return False
     return (resumo.get("erros", 0) / tamanho_lote) > limiar
+
+
+def processar_lote(cliente: ClientePlataformaNova, lote: list[str]) -> dict:
+    """Roda um lote via coletar_com_fallback_pepi e marca a fila conforme o
+    resultado. 'sucesso' = numero_inpi presente em _coletados() (cache em
+    memoria de registrar(), atualizado nesta mesma chamada) apos rodar;
+    o resto vira 'erro' -- nao fica 'pendente' pra sempre, senao a fila
+    reprocessaria o mesmo item bloqueado a cada ciclo."""
+    resumo = coletar_com_fallback_pepi(cliente, lote, escritorio_canonico=None)
+    coletados_agora = _coletados()
+    sucesso = [n for n in lote if n in coletados_agora]
+    falha = [n for n in lote if n not in coletados_agora]
+    marcar(sucesso, "coletado")
+    marcar(falha, "erro")
+    return resumo
