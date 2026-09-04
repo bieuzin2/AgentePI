@@ -70,6 +70,8 @@ A61K,Química
 A61L,Instrumentos
 A61M,Instrumentos
 A61N,Instrumentos
+A61P,Química
+A61Q,Química
 A62B,Outros campos
 A62C,Química
 A62D,Química
@@ -163,6 +165,7 @@ B31C,Mecânica
 B31D,Mecânica
 B31F,Mecânica
 B32B,Química
+B33Y,Mecânica
 B41B,Mecânica
 B41C,Mecânica
 B41D,Mecânica
@@ -294,6 +297,7 @@ C09D,Química
 C09F,Química
 C09G,Química
 C09H,Química
+C09J,Química
 C09K,Química
 C10B,Química
 C10C,Química
@@ -490,6 +494,7 @@ F24C,Mecânica
 F24D,Mecânica
 F24F,Mecânica
 F24H,Mecânica
+F24S,Mecânica
 F25B,Mecânica
 F25C,Mecânica
 F25D,Outros campos
@@ -554,6 +559,7 @@ G06K,Eletricidade
 G06N,Eletricidade
 G06Q,Eletricidade
 G06T,Eletricidade
+G06V,Eletricidade
 G07B,Instrumentos
 G07C,Instrumentos
 G07D,Instrumentos
@@ -578,6 +584,7 @@ G10L,Eletricidade
 G11B,Eletricidade
 G11C,Eletricidade
 G12B,Instrumentos
+G16H,Eletricidade
 G21B,Mecânica
 G21C,Mecânica
 G21D,Mecânica
@@ -630,6 +637,7 @@ H04N,Eletricidade
 H04Q,Eletricidade
 H04R,Eletricidade
 H04S,Eletricidade
+H04W,Eletricidade
 H05B,Eletricidade
 H05C,Eletricidade
 H05F,Eletricidade

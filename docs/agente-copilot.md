@@ -44,7 +44,7 @@ velho. Sempre que fizer deploy de uma tool nova, execute este runbook:
 2. Copilot Studio → agente **Agente PI** → aba **Tools/Ferramentas**.
 3. **Caso A — conectado como servidor MCP inteiro** (um conector só que trouxe todas as
    tools juntas): abra a conexão do servidor `agente-pi` e rode **"Add and configure"**
-   / **Refresh**; se pedir, **re-autorize** com a `X-API-Key`. Reimporta as 49 de uma vez.
+   / **Refresh**; se pedir, **re-autorize** com a `X-API-Key`. Reimporta as 51 de uma vez.
 4. **Caso B — conectado tool a tool** (cada ação adicionada individualmente): adicione as
    novas manualmente pelo mesmo fluxo das antigas: `inpi_anuidades_pagas`,
    `inpi_peticoes_escritorio`, `inpi_reconciliar`, `fto_dominio_publico`,
