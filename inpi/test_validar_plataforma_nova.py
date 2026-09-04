@@ -49,3 +49,22 @@ def test_amostrar_processos_separa_recentes_e_antigos(monkeypatch, tmp_path):
     assert {a["numero_inpi"] for a in amostra} == {"1", "2"}
     recentes = {a["numero_inpi"] for a in amostra if a["recente"]}
     assert recentes == {"1"}
+
+
+def test_amostrar_processos_exclui_formato_legado_pi(monkeypatch, tmp_path):
+    banco = duckdb.connect(str(tmp_path / "fixture.duckdb"))
+    banco.execute("CREATE TABLE biblio (numero_inpi VARCHAR, data_deposito DATE)")
+    banco.execute("""
+      CREATE TABLE ficha_extras (numero_inpi VARCHAR, cpc VARCHAR,
+        escritorio_canonico VARCHAR, fonte VARCHAR, coletado_em VARCHAR)
+    """)
+    banco.execute("INSERT INTO biblio VALUES "
+                  "('102022010731', DATE '2020-01-01'), ('PI9401632', DATE '2020-01-01')")
+    banco.execute("INSERT INTO ficha_extras VALUES "
+                  "('102022010731', NULL, 'clarke', 'pePI', '2026-08-25'), "
+                  "('PI9401632', NULL, 'clarke', 'pePI', '2026-08-25')")
+    monkeypatch.setattr(consulta, "con", lambda: banco)
+
+    amostra = amostrar_processos("clarke", tamanho=10, dias_recentes=45)
+
+    assert {a["numero_inpi"] for a in amostra} == {"102022010731"}

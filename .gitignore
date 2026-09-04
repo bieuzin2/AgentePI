@@ -17,6 +17,9 @@ busca/data/
 # a tabela ficha_extras sai dele via ingest). O procuradores-sigilo.csv (2 MB) fica
 # versionado de proposito -- este e a excecao pelo tamanho.
 inpi/referencias/ficha-extras.csv
+# coleta bruta do portal de estatisticas publico (~6k linhas, re-coletavel via
+# inpi/estatistica_publica.py; a tabela estatistica_nacional sai dela via ingest).
+inpi/referencias/estatistica-nacional.csv
 
 # ambiente
 .venv/

@@ -25,10 +25,18 @@ def amostrar_processos(escritorio_canonico: str | None, tamanho: int,
     """Amostra numero_inpi ja coletados pelo pePI (tabela ficha_extras), ate
     metade de `tamanho` de cada grupo -- 'recentes' (deposito nos ultimos
     `dias_recentes` dias) e 'antigos' -- pra medir cobertura das duas
-    populacoes separadamente, nao so uma media que esconde o problema."""
+    populacoes separadamente, nao so uma media que esconde o problema.
+
+    So amostra numero_inpi no formato MODERNO (12 digitos): o dump do INPI
+    guarda pedidos pre-2012 com numero_inpi no formato legado 'PIxxxxxxx'
+    (~55% de ficha_extras, medido em 2026-09-04), que a plataforma nova nao
+    aceita (client.plataforma_nova exige 12 digitos sem prefixo) -- incluir
+    esses infla a taxa de erro com um problema de FORMATO, nao de cobertura
+    real. Legado fica de fora da validacao; permanece coberto so pelo pePI."""
     corte = (date.today() - timedelta(days=dias_recentes)).isoformat()
     filtro = " AND fe.escritorio_canonico = ?" if escritorio_canonico else ""
     params_extra = [escritorio_canonico] if escritorio_canonico else []
+    apenas_moderno = " AND fe.numero_inpi NOT LIKE 'PI%'"
 
     # strftime antes de comparar, nao DATE bruto contra parametro VARCHAR --
     # mesmo padrao de inpi/anuidades_pagas.py (comparar DATE ao ? direto e
@@ -36,13 +44,13 @@ def amostrar_processos(escritorio_canonico: str | None, tamanho: int,
     recentes = _linhas(
         f"""SELECT fe.numero_inpi, b.data_deposito
             FROM ficha_extras fe JOIN biblio b USING (numero_inpi)
-            WHERE strftime(b.data_deposito, '%Y-%m-%d') >= ?{filtro}""",
+            WHERE strftime(b.data_deposito, '%Y-%m-%d') >= ?{filtro}{apenas_moderno}""",
         [corte, *params_extra],
     )
     antigos = _linhas(
         f"""SELECT fe.numero_inpi, b.data_deposito
             FROM ficha_extras fe JOIN biblio b USING (numero_inpi)
-            WHERE strftime(b.data_deposito, '%Y-%m-%d') < ?{filtro}""",
+            WHERE strftime(b.data_deposito, '%Y-%m-%d') < ?{filtro}{apenas_moderno}""",
         [corte, *params_extra],
     )
     metade = max(1, tamanho // 2)
