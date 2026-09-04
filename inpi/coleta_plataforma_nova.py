@@ -68,6 +68,7 @@ def _nao_encontrado(exc: PlataformaNovaError) -> bool:
 def coletar_e_registrar(
     cliente: ClientePlataformaNova, numeros_inpi: list[str],
     escritorio_canonico: str, fonte: str = FONTE_PADRAO,
+    atualizar: bool = False,
 ) -> dict[str, Any]:
     """Para cada numero_inpi: busca biblio (pra CPC) + anuidades, mapeia pro
     shape do registrar() existente, grava. Erro de rede/API num processo NAO
@@ -89,7 +90,7 @@ def coletar_e_registrar(
                         for obj in listagem.get("objects", [])]
             campos = {"cpc": _extrair_cpc(biblio), "peticoes": [], "anuidades": anuidades}
             ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
-                           date.today().isoformat())
+                           date.today().isoformat(), atualizar=atualizar)
             resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
         except PlataformaNovaError as exc:
             if _nao_encontrado(exc):
@@ -102,6 +103,7 @@ def coletar_e_registrar(
 def coletar_com_fallback_pepi(
     cliente: ClientePlataformaNova, numeros_inpi: list[str],
     escritorio_canonico: str, fonte: str = FONTE_PADRAO, paralelismo: int = 4,
+    atualizar: bool = False,
 ) -> dict[str, Any]:
     """Plataforma nova como fonte PRIMARIA pros tres recortes (moderno,
     sigilo, legado -- todos validados, ver docs/pesquisa/inpi_plataforma_nova.md);
@@ -111,7 +113,8 @@ def coletar_com_fallback_pepi(
     coleta_ficha_extras.varrer_e_registrar_paralelo pra nao forcar abertura
     de sessao Tor/pePI em quem so usa coletar_e_registrar (o caso comum,
     moderno/sigilo, nunca precisa do pePI)."""
-    resumo = coletar_e_registrar(cliente, numeros_inpi, escritorio_canonico, fonte)
+    resumo = coletar_e_registrar(cliente, numeros_inpi, escritorio_canonico, fonte,
+                                 atualizar=atualizar)
     residuo = resumo.pop("nao_encontrados")
     if not residuo:
         resumo["fallback_pepi"] = {"registrados": 0, "nao_encontrado": 0,
@@ -123,5 +126,6 @@ def coletar_com_fallback_pepi(
     resumo["fallback_pepi"] = varrer_e_registrar_paralelo(
         residuo, escritorio_canonico, paralelismo=paralelismo,
         fonte="pePI busca.inpi.gov.br (fallback da plataforma nova)",
+        atualizar=atualizar,
     )
     return resumo

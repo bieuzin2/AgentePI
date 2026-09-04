@@ -49,6 +49,24 @@ def test_cria_tabela_a_partir_do_csv_curado(tmp_path, monkeypatch):
     assert r == [("A01B 13/14",)]
 
 
+def test_recoleta_mais_nova_vence_a_antiga(tmp_path, monkeypatch):
+    """C1: registrar(atualizar=True) APENDA a recoleta no CSV append-only --
+    aqui fica so a linha de coletado_em mais recente por numero_inpi."""
+    csv_path = tmp_path / "ficha-extras.csv"
+    _escreve_csv(csv_path, [
+        ["102020000001", "A01B 13/14", "[]", "[]", "", "CLARKE MODET", "pePI", "2026-08-11"],
+        ["102020000001", "C07D 1/00", "[]", "[]", "", "CLARKE MODET", "plataforma nova",
+         "2026-09-04"],
+    ])
+    monkeypatch.setattr(m, "FICHA_EXTRAS", csv_path)
+    con = _banco_minimo()
+
+    m._mescla_ficha_extras(con)
+
+    r = con.execute("SELECT cpc, coletado_em FROM ficha_extras").fetchall()
+    assert r == [("C07D 1/00", "2026-09-04")]
+
+
 def test_descarta_numero_inpi_que_nao_existe_em_biblio(tmp_path, monkeypatch):
     csv = tmp_path / "ficha-extras.csv"
     csv.write_text(

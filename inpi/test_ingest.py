@@ -1,4 +1,3 @@
-# inpi/test_ingest.py (criar se nao existir)
 """Testes dos mesclas de referencia estatica de inpi/ingest.py (sem rede,
 sem baixar dump -- so a logica de merge do CSV de referencia)."""
 

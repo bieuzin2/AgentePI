@@ -355,6 +355,12 @@ def _mescla_ficha_extras(con) -> None:
                       'fonte': 'VARCHAR', 'coletado_em': 'VARCHAR'
                     }}) f
       JOIN biblio b USING (numero_inpi)
+      -- O CSV e append-only: a recoleta incremental (registrar(atualizar=True))
+      -- apenda uma linha nova em vez de reescrever 609MB pra trocar uma linha
+      -- no meio. Fica so a mais recente por numero_inpi -- sem isto, a mesma
+      -- ficha apareceria N vezes e o coletado_em antigo poderia ganhar.
+      QUALIFY row_number() OVER (PARTITION BY f.numero_inpi
+                                 ORDER BY f.coletado_em DESC) = 1
     """)
 
     # ficha_extras: tabela principal, uma linha por pedido
@@ -438,7 +444,8 @@ def _mescla_estatistica_nacional(con) -> None:
 
 def _mescla_ipc_campo_tecnologico(con) -> None:
     """Carrega a concordancia publica e estatica IPC-subclasse -> campo
-    tecnologico WIPO-35 (mesma taxonomia que estatistica_nacional.campo_tecnologico
+    tecnologico WIPO de 5 setores -- Eletricidade, Instrumentos, Mecanica, Outros
+    campos, Quimica (mesma taxonomia que estatistica_nacional.campo_tecnologico
     -- ver inpi/referencias/ipc-campo-tecnologico.csv). Dado publico, sem coleta
     -- se o CSV nao existir ainda, a tabela simplesmente nao e criada (mesma
     regra de tolerancia de _mescla_ficha_extras/_mescla_estatistica_nacional)."""

@@ -161,3 +161,23 @@ def test_registrar_recusa_duplicata_ja_coletada(tmp_path, monkeypatch):
 
     assert ok is False
     assert len(m._le_csv()) == 1
+
+
+def test_registrar_com_atualizar_apenda_recoleta_mais_nova(tmp_path, monkeypatch):
+    """C1: sem isto o incremento faz a ida na rede e joga o resultado fora --
+    coletado_em nunca avanca e o watermark nunca sai da lista de vencidos."""
+    con_teste = duckdb.connect(":memory:")
+    con_teste.execute("CREATE TABLE biblio (numero_inpi VARCHAR)")
+    con_teste.execute("INSERT INTO biblio VALUES ('102020000001')")
+    monkeypatch.setattr(m, "con", lambda: con_teste)
+    monkeypatch.setattr(m, "CSV_FICHA_EXTRAS", tmp_path / "ficha-extras.csv")
+    monkeypatch.setattr(m, "_cache_coletados", None)
+    m.registrar("102020000001", {"cpc": "A01B"}, "CLARKE MODET", "pePI", "2026-08-11")
+
+    ok = m.registrar("102020000001", {"cpc": "C07D"}, "CLARKE MODET", "pePI",
+                     "2026-09-04", atualizar=True)
+
+    assert ok is True
+    linhas = m._le_csv()
+    assert len(linhas) == 2
+    assert linhas[-1]["coletado_em"] == "2026-09-04"

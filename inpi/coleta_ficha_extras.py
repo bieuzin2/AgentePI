@@ -193,16 +193,25 @@ def registrar(
     fonte: str,
     coletado_em: str,
     link_documento: str = "",
+    atualizar: bool = False,
 ) -> bool:
     """Grava uma linha coletada no CSV curado. Recusa (devolve False) quando
     o numero_inpi nao existe na base ou ja foi coletado -- mesmo espirito de
-    inpi.coleta_sigilo.registrar."""
+    inpi.coleta_sigilo.registrar.
+
+    `atualizar=True` (recoleta incremental, vigilancia.incremento_plataforma_nova)
+    dispensa a recusa por "ja coletado": APENDA uma linha nova com o
+    coletado_em de hoje. O CSV e append-only de proposito (609MB, reescrever
+    uma linha no meio custaria uma passada inteira a cada gravacao); quem
+    resolve a duplicata e inpi.ingest._mescla_ficha_extras, que mantem so a
+    linha mais recente por numero_inpi. Sem isto o watermark de
+    numeros_watermark_vencido() nunca avanca."""
     c = con()
     existe = c.execute("SELECT 1 FROM biblio WHERE numero_inpi = ?", [numero_inpi]).fetchone()
     if not existe:
         return False
 
-    if numero_inpi in _coletados():
+    if not atualizar and numero_inpi in _coletados():
         return False
 
     novo = not CSV_FICHA_EXTRAS.exists()
@@ -235,6 +244,7 @@ def _le_csv() -> list[dict]:
 def varrer_e_registrar_paralelo(
     numeros_inpi: list[str], escritorio_canonico: str, paralelismo: int = 4,
     fonte: str = "pePI busca.inpi.gov.br (ficha-extras, paralelo)",
+    atualizar: bool = False,
 ) -> dict:
     """Abre a ficha de cada numero (via _Trabalhador.ficha_html, mesma sessao
     HTTP/paciamento/retry-on-session-loss de inpi.coleta_sigilo) e grava
@@ -244,8 +254,12 @@ def varrer_e_registrar_paralelo(
     Filtra os ja coletados ANTES do fetch de rede -- registrar() so descartava
     na hora de gravar, entao rodar de novo sobre uma populacao parcialmente
     ja coletada (ex.: retomar apos reiniciar Tor) desperdicava 2 requisicoes
-    de rede por numero_inpi so pra jogar o resultado fora no dedup."""
-    numeros_inpi = [n for n in numeros_inpi if n not in _coletados()]
+    de rede por numero_inpi so pra jogar o resultado fora no dedup.
+
+    `atualizar=True` desliga esse pre-filtro: a recoleta incremental QUER
+    revisitar quem ja foi coletado (e o unico jeito do coletado_em avancar)."""
+    if not atualizar:
+        numeros_inpi = [n for n in numeros_inpi if n not in _coletados()]
     trabalhadores = _abrir_trabalhadores(paralelismo)
     if trabalhadores is None:
         return {"erro": "nao foi possivel abrir sessao anonima no pePI"}
@@ -279,7 +293,7 @@ def varrer_e_registrar_paralelo(
         campos = extrair_campos(html)
         with lock:
             ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
-                           date.today().isoformat())
+                           date.today().isoformat(), atualizar=atualizar)
             resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
 
     with ThreadPoolExecutor(max_workers=paralelismo) as ex:
