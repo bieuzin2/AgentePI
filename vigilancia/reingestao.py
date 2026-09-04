@@ -1,8 +1,13 @@
 """Reingestao semanal: baixa os CSVs do INPI e recarrega o DuckDB local.
 
 So um wrapper fino sobre inpi/ingest.py (baixar + main), que ja faz download
-atomico e recriacao do banco do zero. A unica coisa nova aqui e registrar a
-data de corte usada pela vigilancia, para os vigias saberem "desde quando".
+atomico e recriacao do banco do zero. As duas coisas novas aqui: (1) registrar
+a data de corte usada pela vigilancia, para os vigias saberem "desde quando";
+(2) preservar o banco da rodada anterior como inpi_anterior.duckdb ANTES de
+ingest.main() apagar e recriar o .duckdb -- e contra essa copia que
+sync_motherduck.sincronizar_incremental() calcula o diff linha-a-linha, para
+subir ao MotherDuck so o que mudou em vez do banco inteiro (1,2 GB) toda
+semana.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from inpi import ingest
 
 RAIZ = Path(__file__).resolve().parent
 CORTE = RAIZ / "data" / "ultima_reingestao.json"
+BANCO_ANTERIOR = ingest.BANCO.with_name("inpi_anterior.duckdb")
 
 
 def reingerir(baixar: bool = True) -> dict:
@@ -27,6 +33,12 @@ def reingerir(baixar: bool = True) -> dict:
     if baixar:
         if ingest.baixar() != 0:
             return {"erro": True, "mensagem": "Falha ao baixar CSVs do INPI."}
+    if ingest.BANCO.exists():
+        # so guarda 1 geracao: se uma rodada anterior ja deixou um
+        # inpi_anterior.duckdb sem o sync ter rodado (ou ter falhado antes de
+        # consumi-lo), ele fica obsoleto -- descarta em favor do mais recente.
+        BANCO_ANTERIOR.unlink(missing_ok=True)
+        ingest.BANCO.rename(BANCO_ANTERIOR)
     if ingest.main() != 0:
         return {"erro": True, "mensagem": "Falha ao recarregar o DuckDB."}
 
