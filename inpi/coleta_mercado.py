@@ -57,12 +57,20 @@ def processar_lote(cliente: ClientePlataformaNova, lote: list[str],
 
 
 def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
-              paralelismo: int = 8, dormir_segundos_em_erro: int = 30) -> None:
+              paralelismo: int = 8, dormir_segundos_em_erro: int = 30,
+              duracao_maxima_segundos: float | None = None) -> None:
     """Sem sleep fixo entre lotes saudaveis -- so pausa (`dormir_segundos_em_erro`)
     quando o lote anterior teve QUALQUER erro, como respiro antes de tentar
     de novo (nao e backoff pra evadir bloqueio: se a proporcao de erro
     passar do limiar, para de vez, nao insiste com sleep nenhum -- ver
-    deve_parar()). Sem erro nenhum, emenda direto no proximo lote."""
+    deve_parar()). Sem erro nenhum, emenda direto no proximo lote.
+
+    `duracao_maxima_segundos`: pro GitHub Actions (maquina descartavel) --
+    para GRACIOSAMENTE apos o lote em andamento, antes do job matar o
+    processo por timeout (o que impediria o passo seguinte de subir o
+    resultado como artifact). A fila fica exatamente onde parou (item
+    processado = marcado; o resto continua 'pendente'), retomada normal na
+    proxima execucao do workflow."""
     login = os.environ.get("INPI_PAG_LOGIN_MERCADO")
     senha = os.environ.get("INPI_PAG_PASSWORD_MERCADO")
     if not login or not senha:
@@ -72,6 +80,7 @@ def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
               flush=True)
         return
 
+    inicio = time.monotonic()
     cliente = ClientePlataformaNova(login, senha)
     try:
         while True:
@@ -86,6 +95,12 @@ def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
                       "-- possivel bloqueio. Parando (sem retomar sozinho).",
                       flush=True)
                 return
+            if (duracao_maxima_segundos is not None
+                    and time.monotonic() - inicio >= duracao_maxima_segundos):
+                print(f"Duracao maxima ({duracao_maxima_segundos:.0f}s) atingida "
+                      "-- parando graciosamente, fila retoma na proxima execucao.",
+                      flush=True)
+                return
             if resumo.get("erros", 0) > 0:
                 time.sleep(dormir_segundos_em_erro)
     finally:
@@ -93,4 +108,11 @@ def rodar_loop(tamanho_lote: int = 50, limiar_bloqueio: float = 0.3,
 
 
 if __name__ == "__main__":
-    rodar_loop()
+    # Env vars opcionais pra configurar via workflow_dispatch inputs (GitHub
+    # Actions) sem editar codigo -- todas tem o mesmo default de rodar_loop().
+    _duracao = os.environ.get("COLETA_MERCADO_DURACAO_MAXIMA_SEGUNDOS")
+    rodar_loop(
+        tamanho_lote=int(os.environ.get("COLETA_MERCADO_TAMANHO_LOTE", 50)),
+        paralelismo=int(os.environ.get("COLETA_MERCADO_PARALELISMO", 8)),
+        duracao_maxima_segundos=float(_duracao) if _duracao else None,
+    )

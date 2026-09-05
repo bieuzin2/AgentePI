@@ -106,3 +106,22 @@ def test_rodar_loop_dorme_apos_erro_isolado_mas_continua(monkeypatch):
         mod.rodar_loop(tamanho_lote=10, limiar_bloqueio=0.5)
 
     mock_sleep.assert_called_once_with(30)
+
+
+def test_rodar_loop_para_ao_atingir_duracao_maxima(monkeypatch, capsys):
+    """duracao_maxima_segundos existe pro GitHub Actions (maquina descartavel,
+    job precisa terminar sozinho pra dar tempo do upload de artifact rodar) --
+    para GRACIOSAMENTE (nao mata o processo), fila continua pendente pra
+    retomar na proxima execucao."""
+    monkeypatch.setenv("INPI_PAG_LOGIN_MERCADO", "user")
+    monkeypatch.setenv("INPI_PAG_PASSWORD_MERCADO", "pass")
+
+    tempos = iter([0.0, 100.0])  # inicio, depois ja passou do teto de 60s
+    with patch("inpi.coleta_mercado.ClientePlataformaNova") as Cliente, \
+         patch("inpi.coleta_mercado.proximo_lote", return_value=["P1"]), \
+         patch("inpi.coleta_mercado.processar_lote", return_value={"erros": 0}), \
+         patch("inpi.coleta_mercado.time.monotonic", side_effect=lambda: next(tempos)):
+        mod.rodar_loop(tamanho_lote=1, duracao_maxima_segundos=60)
+
+    Cliente.return_value.fechar.assert_called_once()
+    assert "duracao maxima" in capsys.readouterr().out.lower()
