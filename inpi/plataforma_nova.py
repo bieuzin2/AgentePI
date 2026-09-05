@@ -26,6 +26,15 @@ _COMPONENT_ID_ANUIDADES = "68b5e7a93cf0f00ea5057fb3"
 
 TipoListagem = Literal["eventos", "anuidades"]
 
+# 502/503/504 = sobrecarga transitoria do gateway do INPI (observado ao vivo
+# em paralelismo alto, 2026-09-04) -- diferente de 4xx (erro de cliente,
+# definitivo) ou de bloqueio deliberado (que nao teria status de gateway
+# genuino). Poucas tentativas com backoff curto: nao e evasao de bloqueio,
+# e tolerancia a um servidor momentaneamente sobrecarregado.
+_STATUS_RETRIAVEIS = {502, 503, 504}
+_TENTATIVAS_GATEWAY = 3
+_BACKOFF_BASE_SEGUNDOS = 1.0
+
 
 class PlataformaNovaError(RuntimeError):
     """Erro de rede/autenticacao/resposta inesperada da API."""
@@ -69,21 +78,32 @@ class ClientePlataformaNova:
             self._autenticar()
         return {"Authorization": f"Bearer {self._token}"}
 
+    def _post_com_retry(self, path: str, json_body: dict, contexto: str) -> Any:
+        """POST com retry curto SO pra 502/503/504 (ver _STATUS_RETRIAVEIS).
+        Qualquer outro status (4xx, ou 5xx fora da lista) levanta na
+        primeira tentativa -- retry ali so atrasaria o fallback pro pePI."""
+        ultimo = None
+        for tentativa in range(1, _TENTATIVAS_GATEWAY + 1):
+            r = self._http.post(path, json=json_body, headers=self._headers())
+            if r.status_code == 200:
+                return r.json()
+            ultimo = r
+            if r.status_code not in _STATUS_RETRIAVEIS or tentativa == _TENTATIVAS_GATEWAY:
+                break
+            time.sleep(_BACKOFF_BASE_SEGUNDOS * tentativa)
+        raise PlataformaNovaError(
+            f"{contexto} (status {ultimo.status_code}): {ultimo.text[:300]}")
+
     def get_bibliographic_data(self, numero_inpi: str) -> list[dict[str, Any]]:
         """Biblio + CPC/classificacao. numero_inpi: 12 digitos, sem 'BR', sem
         digito verificador (ex.: '102022010731'). Devolve a lista crua de
         campos INID (inid/whereDisplay/label/type/value) -- mapear pra dict
         por inid e responsabilidade de quem consome."""
-        r = self._http.post(
+        return self._post_com_retry(
             "/_classId/68b1dda7671584537112aca5/getBibliographicData",
-            json={"processNumber": numero_inpi},
-            headers=self._headers(),
+            {"processNumber": numero_inpi},
+            f"getBibliographicData falhou pra {numero_inpi}",
         )
-        if r.status_code != 200:
-            raise PlataformaNovaError(
-                f"getBibliographicData falhou pra {numero_inpi} "
-                f"(status {r.status_code}): {r.text[:300]}")
-        return r.json()
 
     def get_listing_data(self, numero_inpi: str, tipo: TipoListagem) -> dict[str, Any]:
         """Eventos de Pedido ou Anuidades. 'urlObjectId' -- NAO 'processNumber'
@@ -93,22 +113,17 @@ class ClientePlataformaNova:
         sem filtro fica mais proximo do que o pePI ja cobre hoje)."""
         component_id = (_COMPONENT_ID_EVENTOS if tipo == "eventos"
                         else _COMPONENT_ID_ANUIDADES)
-        r = self._http.post(
+        return self._post_com_retry(
             "/_classId/61bb893d05424e43e91eacd7/getListingData",
-            json={
+            {
                 "componentId": component_id,
                 "customQuery": [],
                 "customSort": None,
                 "pageIndex": 0,
                 "urlObjectId": numero_inpi,
             },
-            headers=self._headers(),
+            f"getListingData({tipo}) falhou pra {numero_inpi}",
         )
-        if r.status_code != 200:
-            raise PlataformaNovaError(
-                f"getListingData({tipo}) falhou pra {numero_inpi} "
-                f"(status {r.status_code}): {r.text[:300]}")
-        return r.json()
 
     def fechar(self) -> None:
         self._http.close()

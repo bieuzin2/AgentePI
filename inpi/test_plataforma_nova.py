@@ -116,3 +116,57 @@ def test_status_diferente_de_200_levanta_erro_com_corpo():
     cliente = _cliente_mock(handler)
     with pytest.raises(PlataformaNovaError, match="400"):
         cliente.get_bibliographic_data("000000000000")
+
+
+def test_504_gateway_timeout_faz_retry_e_recupera(monkeypatch):
+    """504 e sobrecarga transitoria do gateway do INPI (observado ao vivo em
+    paralelismo alto), nao bloqueio deliberado -- poucas tentativas com
+    backoff curto, depois volta a funcionar (nao insiste pra sempre)."""
+    monkeypatch.setattr("inpi.plataforma_nova.time.sleep", lambda s: None)
+    tentativas = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/signIn/defaultAuthenticatorCustomer"):
+            return httpx.Response(200, json=_resposta_login(time.time() + 3600))
+        tentativas["n"] += 1
+        if tentativas["n"] < 3:
+            return httpx.Response(504, text="Gateway Time-out")
+        return httpx.Response(200, json=[{"inid": "52", "value": "A61K"}])
+
+    cliente = _cliente_mock(handler)
+    resultado = cliente.get_bibliographic_data("102022010731")
+
+    assert resultado == [{"inid": "52", "value": "A61K"}]
+    assert tentativas["n"] == 3
+
+
+def test_504_gateway_timeout_persistente_ainda_levanta_erro_apos_tentativas(monkeypatch):
+    monkeypatch.setattr("inpi.plataforma_nova.time.sleep", lambda s: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/signIn/defaultAuthenticatorCustomer"):
+            return httpx.Response(200, json=_resposta_login(time.time() + 3600))
+        return httpx.Response(504, text="Gateway Time-out")
+
+    cliente = _cliente_mock(handler)
+    with pytest.raises(PlataformaNovaError, match="504"):
+        cliente.get_bibliographic_data("102022010731")
+
+
+def test_400_nao_faz_retry_levanta_na_primeira_tentativa(monkeypatch):
+    """So 502/503/504 (sobrecarga de gateway) tem retry -- erro de cliente
+    (400, processo nao encontrado etc.) e definitivo, retry so atrasaria o
+    fallback pro pePI a toa."""
+    chamadas = {"n": 0}
+    monkeypatch.setattr("inpi.plataforma_nova.time.sleep", lambda s: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/signIn/defaultAuthenticatorCustomer"):
+            return httpx.Response(200, json=_resposta_login(time.time() + 3600))
+        chamadas["n"] += 1
+        return httpx.Response(400, json={"text": "erro"})
+
+    cliente = _cliente_mock(handler)
+    with pytest.raises(PlataformaNovaError, match="400"):
+        cliente.get_bibliographic_data("102022010731")
+    assert chamadas["n"] == 1
