@@ -18,15 +18,15 @@ name: Coleta de mercado (concorrentes -> nacional)
 on:
   workflow_dispatch:
     inputs:
-      tamanho_lote:
+      tamanho_lote: 120
         description: "Processos por lote"
         required: false
         default: "50"
-      paralelismo:
+      paralelismo: 30
         description: "Requisicoes concorrentes dentro de cada lote"
         required: false
         default: "8"
-      duracao_maxima_minutos:
+      duracao_maxima_minutos: 60
         description: "Para gracioso apos esse tempo (fila retoma sozinha na proxima execucao)"
         required: false
         default: "300"
