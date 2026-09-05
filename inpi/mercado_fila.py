@@ -14,6 +14,7 @@ Ver docs/superpowers/specs/2026-09-04-inpi-enriquecimento-mercado-design.md.
 from __future__ import annotations
 
 import csv as _csv
+import os
 from datetime import date
 from pathlib import Path
 
@@ -27,9 +28,30 @@ BANCO_FILA = RAIZ / "data" / "fila_mercado.duckdb"
 CLIENTES_CURADOS = RAIZ / "referencias" / "clientes-clarke.csv"
 
 
+def _em_github_actions() -> bool:
+    """GITHUB_ACTIONS='true' e setado automaticamente pelo runner -- nao usa
+    so MOTHERDUCK_TOKEN como gatilho porque o token ja fica no ambiente de
+    qualquer processo local que rode load_dotenv() (ver o incidente
+    documentado em inpi/db.py sobre isso desviar consulta local silenciosamente
+    pra copia desatualizada do MotherDuck). Aqui o objetivo e o oposto: usar
+    MotherDuck so quando de fato estamos numa maquina descartavel do GH
+    Actions, onde fila_mercado.duckdb local nao sobrevive entre execucoes."""
+    return os.environ.get("GITHUB_ACTIONS") == "true" and bool(
+        os.environ.get("MOTHERDUCK_TOKEN"))
+
+
 def _con() -> duckdb.DuckDBPyConnection:
-    BANCO_FILA.parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(BANCO_FILA))
+    """Fila em MotherDuck (banco 'mercado', compartilhado) quando rodando no
+    GH Actions -- a maquina e descartavel, um arquivo local nao sobrevive
+    entre execucoes. Local (fila_mercado.duckdb) fora do GH Actions, mesmo
+    com MOTHERDUCK_TOKEN no ambiente."""
+    if _em_github_actions():
+        con = duckdb.connect(f"md:?motherduck_token={os.environ['MOTHERDUCK_TOKEN']}")
+        con.execute("CREATE DATABASE IF NOT EXISTS mercado")
+        con.execute("USE mercado")
+    else:
+        BANCO_FILA.parent.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect(str(BANCO_FILA))
     con.execute("""
         CREATE TABLE IF NOT EXISTS fila_mercado (
             numero_inpi VARCHAR,

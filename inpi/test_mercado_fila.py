@@ -3,11 +3,34 @@ tmp_path -- sem rede, sem tocar inpi.duckdb nem fila_mercado.duckdb real."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import duckdb
 
 import inpi.mercado_fila as fila
+
+
+def test_con_usa_motherduck_so_dentro_do_github_actions(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "tok")
+    con_falso = MagicMock()
+    with patch("duckdb.connect", return_value=con_falso) as mock_connect:
+        fila._con()
+    mock_connect.assert_called_once_with("md:?motherduck_token=tok")
+    con_falso.execute.assert_any_call("CREATE DATABASE IF NOT EXISTS mercado")
+    con_falso.execute.assert_any_call("USE mercado")
+
+
+def test_con_usa_arquivo_local_fora_do_github_actions_mesmo_com_token(monkeypatch, tmp_path):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "tok")
+    banco = tmp_path / "fila_mercado.duckdb"
+    monkeypatch.setattr(fila, "BANCO_FILA", banco)
+
+    con = fila._con()
+    con.close()
+
+    assert banco.exists()
 
 
 def test_proximo_lote_prioriza_concorrente_antes_de_nacional(monkeypatch, tmp_path):
