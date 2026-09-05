@@ -1,0 +1,71 @@
+name: Coleta de mercado (concorrentes -> nacional)
+
+# Enriquecimento fora da carteira propria (CPC/anuidades/peticoes via
+# plataforma nova do INPI), deliberadamente SEPARADO do job semanal de
+# producao (vigilancia/executar.py). Ver:
+#   docs/superpowers/specs/2026-09-04-inpi-enriquecimento-mercado-design.md
+#
+# So dispara manualmente (workflow_dispatch) -- a credencial PAG usada aqui
+# e provisoria/de teste, sem agendamento automatico ainda.
+#
+# Secrets necessarios no repo (Settings > Secrets and variables > Actions):
+#   INPI_PAG_LOGIN_MERCADO / INPI_PAG_PASSWORD_MERCADO -- credencial PAG
+#     ISOLADA da producao (nunca a mesma de INPI_PAG_LOGIN/INPI_PAG_PASSWORD).
+#   MOTHERDUCK_TOKEN -- ja usado pelo resto do projeto; aqui a fila
+#     (inpi/mercado_fila.py) usa MotherDuck em vez de arquivo local porque
+#     o runner e descartavel (nada sobrevive entre execucoes sem isso).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tamanho_lote:
+        description: "Processos por lote"
+        required: false
+        default: "50"
+      paralelismo:
+        description: "Requisicoes concorrentes dentro de cada lote"
+        required: false
+        default: "8"
+      duracao_maxima_minutos:
+        description: "Para gracioso apos esse tempo (fila retoma sozinha na proxima execucao)"
+        required: false
+        default: "300"
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340  # folga sobre duracao_maxima_minutos p/ o upload de artifact rodar
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instala dependencias
+        run: pip install -e .
+
+      - name: Roda a coleta (para sozinha no teto de tempo ou em bloqueio)
+        env:
+          INPI_PAG_LOGIN_MERCADO: ${{ secrets.INPI_PAG_LOGIN_MERCADO }}
+          INPI_PAG_PASSWORD_MERCADO: ${{ secrets.INPI_PAG_PASSWORD_MERCADO }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          COLETA_MERCADO_TAMANHO_LOTE: ${{ inputs.tamanho_lote }}
+          COLETA_MERCADO_PARALELISMO: ${{ inputs.paralelismo }}
+          COLETA_MERCADO_DURACAO_MAXIMA_SEGUNDOS: ${{ fromJSON(inputs.duracao_maxima_minutos) * 60 }}
+        run: python -u -m inpi.coleta_mercado
+
+      # inpi/referencias/ficha-extras.csv comeca vazio no checkout limpo --
+      # ao final do job so tem as linhas coletadas NESTA execucao. Sobe como
+      # artifact pra nao perder nada; mesclar no CSV real de producao e
+      # passo manual (o merge ja dedupica por numero_inpi + coletado_em mais
+      # recente via inpi/ingest.py::_mescla_ficha_extras, entao concatenar
+      # varios artifacts antes de rodar o ingest e seguro).
+      - name: Sobe o que foi coletado nesta execucao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ficha-extras-parcial-${{ github.run_id }}
+          path: inpi/referencias/ficha-extras.csv
+          if-no-files-found: warn
+          retention-days: 90
