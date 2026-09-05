@@ -170,3 +170,38 @@ def test_400_nao_faz_retry_levanta_na_primeira_tentativa(monkeypatch):
     with pytest.raises(PlataformaNovaError, match="400"):
         cliente.get_bibliographic_data("102022010731")
     assert chamadas["n"] == 1
+
+
+def test_read_timeout_faz_retry_e_recupera(monkeypatch):
+    """ReadTimeout (servidor nao respondeu dentro do prazo, sem status HTTP
+    algum) e a mesma classe de sobrecarga transitoria que 502/503/504 --
+    tambem merece retry curto, nao so status explicito."""
+    monkeypatch.setattr("inpi.plataforma_nova.time.sleep", lambda s: None)
+    tentativas = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/signIn/defaultAuthenticatorCustomer"):
+            return httpx.Response(200, json=_resposta_login(time.time() + 3600))
+        tentativas["n"] += 1
+        if tentativas["n"] < 3:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, json=[{"inid": "52", "value": "A61K"}])
+
+    cliente = _cliente_mock(handler)
+    resultado = cliente.get_bibliographic_data("102022010731")
+
+    assert resultado == [{"inid": "52", "value": "A61K"}]
+    assert tentativas["n"] == 3
+
+
+def test_read_timeout_persistente_ainda_levanta_erro_apos_tentativas(monkeypatch):
+    monkeypatch.setattr("inpi.plataforma_nova.time.sleep", lambda s: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/signIn/defaultAuthenticatorCustomer"):
+            return httpx.Response(200, json=_resposta_login(time.time() + 3600))
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    cliente = _cliente_mock(handler)
+    with pytest.raises(PlataformaNovaError, match="ReadTimeout|timed out"):
+        cliente.get_bibliographic_data("102022010731")

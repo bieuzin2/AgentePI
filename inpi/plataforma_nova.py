@@ -79,20 +79,38 @@ class ClientePlataformaNova:
         return {"Authorization": f"Bearer {self._token}"}
 
     def _post_com_retry(self, path: str, json_body: dict, contexto: str) -> Any:
-        """POST com retry curto SO pra 502/503/504 (ver _STATUS_RETRIAVEIS).
+        """POST com retry curto pra 502/503/504 (ver _STATUS_RETRIAVEIS) OU
+        timeout de rede (httpx.TimeoutException -- ReadTimeout observado ao
+        vivo em paralelismo alto: servidor sobrecarregado, nao responde
+        dentro do prazo, sem sequer devolver status). Mesma classe de
+        sobrecarga transitoria, mesmo backoff curto -- nao e retry contra
+        bloqueio deliberado (nunca vimos 403/429 aqui).
+
         Qualquer outro status (4xx, ou 5xx fora da lista) levanta na
         primeira tentativa -- retry ali so atrasaria o fallback pro pePI."""
-        ultimo = None
+        ultimo_status: int | None = None
+        ultimo_corpo = ""
+        ultimo_timeout: httpx.TimeoutException | None = None
         for tentativa in range(1, _TENTATIVAS_GATEWAY + 1):
-            r = self._http.post(path, json=json_body, headers=self._headers())
+            try:
+                r = self._http.post(path, json=json_body, headers=self._headers())
+            except httpx.TimeoutException as exc:
+                ultimo_timeout = exc
+                if tentativa == _TENTATIVAS_GATEWAY:
+                    break
+                time.sleep(_BACKOFF_BASE_SEGUNDOS * tentativa)
+                continue
+            ultimo_timeout = None
             if r.status_code == 200:
                 return r.json()
-            ultimo = r
+            ultimo_status, ultimo_corpo = r.status_code, r.text[:300]
             if r.status_code not in _STATUS_RETRIAVEIS or tentativa == _TENTATIVAS_GATEWAY:
                 break
             time.sleep(_BACKOFF_BASE_SEGUNDOS * tentativa)
-        raise PlataformaNovaError(
-            f"{contexto} (status {ultimo.status_code}): {ultimo.text[:300]}")
+        if ultimo_timeout is not None:
+            raise PlataformaNovaError(
+                f"{contexto} ({type(ultimo_timeout).__name__}): {ultimo_timeout}")
+        raise PlataformaNovaError(f"{contexto} (status {ultimo_status}): {ultimo_corpo}")
 
     def get_bibliographic_data(self, numero_inpi: str) -> list[dict[str, Any]]:
         """Biblio + CPC/classificacao. numero_inpi: 12 digitos, sem 'BR', sem
