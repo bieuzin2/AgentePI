@@ -117,6 +117,8 @@ def coletar_e_registrar(
                     resumo["nao_encontrados"].append(numero_inpi)
                 else:
                     resumo["erros"] += 1
+                    print(f"  erro em {numero_inpi}: {type(exc).__name__}: {exc}",
+                          flush=True)
 
     if paralelismo <= 1:
         for numero_inpi in numeros_inpi:
