@@ -102,9 +102,14 @@ def coletar_e_registrar(
             anuidades = [_mapear_anuidade(obj["value"])
                         for obj in listagem.get("objects", [])]
             campos = {"cpc": _extrair_cpc(biblio), "peticoes": [], "anuidades": anuidades}
-            ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
-                           date.today().isoformat(), atualizar=atualizar)
+            # registrar() usa a conexao DuckDB SINGLETON de inpi.db.con() (uma
+            # so por processo) -- concorrente sem lock corrompe/derruba a
+            # conexao com paralelismo>1 (mesmo motivo que
+            # coleta_ficha_extras.varrer_e_registrar_paralelo ja protege sua
+            # propria chamada a registrar() dentro do lock de progresso).
             with lock:
+                ok = registrar(numero_inpi, campos, escritorio_canonico, fonte,
+                               date.today().isoformat(), atualizar=atualizar)
                 resumo["registrados" if ok else "ja_coletado_ou_invalido"] += 1
         except (PlataformaNovaError, httpx.HTTPError) as exc:
             with lock:
