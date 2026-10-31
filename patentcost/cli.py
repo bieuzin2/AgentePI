@@ -14,7 +14,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from patentcost.export import casos_br, casos_familia, conciliar, escrever_xlsx
+from patentcost.export import casos_br, casos_familia, conciliar, escrever_xlsx, premissas_reivindicacoes
 from patentcost.insights import montar_insights
 from patentcost.stats import estatistica_por_secao
 
@@ -41,7 +41,7 @@ def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = No
     lacunas = ["Titularidade pública não comprova pagamento de anuidades nem quem gere o caso.",
                "Membros estrangeiros vêm da família INPADOC (EPO OPS): status inferido pelo kind code; validações EP não conferidas.",
                "Pedidos depositados há menos de 18 meses podem estar em sigilo e não aparecer.",
-               "Nº de reivindicações não consta dos dados abertos do INPI: taxas que dependem dele (exame BR) ficam pendentes; informe a premissa reivindicacoes_padrao no PatentCost para estimá-las."]
+               "Nº de reivindicações não consta dos dados abertos do INPI: taxas que dependem dele (exame BR) ficam pendentes; a planilha traz cenários reiv_10/15/20/30 (premissa reivindicacoes_padrao) para sensibilidade; no cenário base o adicional fica pendente."]
     if sem_familia:
         lacunas.append("Família EPO não consultada nesta execução (--sem-familia).")
     elif rel_fam.get("antigos_nao_concedidos"):
@@ -49,7 +49,7 @@ def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = No
     if chaves == encontradas:
         lacunas.append("Chaves do titular não confirmadas pelo usuário: todas as encontradas pelo nome foram usadas (ver lacunas.json, resolucao_titular).")
     saida.mkdir(parents=True, exist_ok=True)
-    escrever_xlsx(casos, PATENTCOST / "dist" / "PatentCost_Modelo_Entrada.xlsx", saida / f"PatentCost_Entrada_{cliente}.xlsx")
+    escrever_xlsx(casos, PATENTCOST / "dist" / "PatentCost_Modelo_Entrada.xlsx", saida / f"PatentCost_Entrada_{cliente}.xlsx", premissas_reivindicacoes())
     fontes = [{"name": "INPI dados abertos", "coverage": f"última RPI {cob.get('ultima_rpi') or cob.get('rpi_mais_recente') or '?'}; chaves {', '.join(chaves)}"},
               {"name": "EPO OPS (família INPADOC)", "coverage": "não consultado" if sem_familia else f"{len(ext)} membros estrangeiros"}]
     (saida / "insights.json").write_text(json.dumps(montar_insights(casos, cliente, fontes, lacunas), ensure_ascii=False, indent=1), encoding="utf-8")

@@ -157,8 +157,19 @@ CAMPOS = ["id_caso", "cliente", "jurisdicao", "modalidade", "tipo_registro", "nu
           "rota", "status", "data_status", "data_deposito", "data_concessao", "ipc_cpc", "categoria_tecnologica", "categoria_requerente", "observacoes"]
 
 
-def escrever_xlsx(casos: list[dict], modelo: Path, saida: Path) -> Path:
-    """Preenche a aba Casos do modelo oficial do PatentCost (cabeçalho = chaves dos campos)."""
+# Nº de reivindicações não está nos dados abertos do INPI: cenários de sensibilidade nomeados (o "base" fica sem
+# premissa e o adicional por reivindicação excedente segue pendente até haver contagem real ou escolha do usuário).
+CENARIOS_REIVINDICACOES = (10, 15, 20, 30)
+
+
+def premissas_reivindicacoes(valores=CENARIOS_REIVINDICACOES) -> list[dict]:
+    return [{"cenario": f"reiv_{n}", "jurisdicao": "BR", "modalidade": "PI", "categoria_tecnologica": "*", "parametro": "reivindicacoes_padrao",
+             "valor": n, "origem": "ajuste", "justificativa": f"Sensibilidade: {n} reivindicações por pedido sem contagem real (não consta dos dados abertos do INPI)."}
+            for n in valores]
+
+
+def escrever_xlsx(casos: list[dict], modelo: Path, saida: Path, premissas: list[dict] | None = None) -> Path:
+    """Preenche as abas Casos e Premissas do modelo oficial do PatentCost (cabeçalho = chaves dos campos)."""
     wb = load_workbook(modelo)
     # Comentários de ajuda do modelo regravados pelo openpyxl quebram o leitor ExcelJS do PatentCost
     # (teste de contrato tests/agentepi-contract.test.ts): o arquivo de dados sai sem eles.
@@ -175,6 +186,11 @@ def escrever_xlsx(casos: list[dict], modelo: Path, saida: Path) -> Path:
             if k == "observacoes":
                 v = f"[{c.get('fonte', '?')}|{c.get('confianca', '?')}] {v or ''}".strip()
             ws.cell(i, j).value = v
+    wp = wb["Premissas"]
+    cab = [c.value for c in wp[1]]
+    for i, p in enumerate(premissas or [], 2):
+        for k, v in p.items():
+            wp.cell(i, cab.index(k) + 1).value = v
     saida.parent.mkdir(parents=True, exist_ok=True)
     wb.save(saida)
     return saida

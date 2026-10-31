@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from patentcost.export import casos_familia, classificar_status, conciliar, data_iso, escrever_xlsx, modalidade_de, secao_ipc
+from patentcost.export import casos_familia, classificar_status, conciliar, data_iso, escrever_xlsx, modalidade_de, premissas_reivindicacoes, secao_ipc
 
 MODELO = Path(r"C:\Users\Gabriel\Desktop\PatentCost\dist\PatentCost_Modelo_Entrada.xlsx")
 
@@ -63,7 +63,9 @@ def test_xlsx_no_contrato(tmp_path):
     if not MODELO.exists():
         pytest.skip("modelo do PatentCost ausente (rode npm run template)")
     escrever_xlsx([{"id_caso": "BR-X", "cliente": "SINT", "jurisdicao": "BR", "modalidade": "PI", "tipo_registro": "existente",
-                    "numero_pedido": "X", "status": "pendente", "fonte": "INPI", "confianca": "confirmado", "observacoes": "sintético"}], MODELO, tmp_path / "o.xlsx")
+                    "numero_pedido": "X", "status": "pendente", "fonte": "INPI", "confianca": "confirmado", "observacoes": "sintético"}], MODELO, tmp_path / "o.xlsx", premissas_reivindicacoes((15, 20)))
+    wp = load_workbook(tmp_path / "o.xlsx")["Premissas"]
+    assert [(r[0], r[1], r[4], r[5]) for r in wp.iter_rows(min_row=2, max_row=3, values_only=True)] == [("reiv_15", "BR", "reivindicacoes_padrao", 15), ("reiv_20", "BR", "reivindicacoes_padrao", 20)]
     ws = load_workbook(tmp_path / "o.xlsx")["Casos"]
     cab = [c.value for c in ws[1]]
     linha = next(r for r in range(2, ws.max_row + 1) if ws.cell(r, cab.index("id_caso") + 1).value == "BR-X")
