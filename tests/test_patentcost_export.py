@@ -31,6 +31,8 @@ def test_status_pela_classificacao_do_agentepi():
 def test_modalidade_secao_e_data():
     assert modalidade_de("102018001234") == "PI" and modalidade_de("202018001234") == "MU"
     assert modalidade_de("PI0803071") == "PI" and modalidade_de("MU8901234") == "MU"
+    assert modalidade_de("112019000001") == "PI" and modalidade_de("212019000001") == "MU" and modalidade_de("C10803071") == "PI"
+    assert modalidade_de("MI6501234") is None and modalidade_de("302019000001") is None
     assert secao_ipc("E21B 43/26") == "E" and secao_ipc(None) is None and secao_ipc("") is None
     assert data_iso("20190201") == "2019-02-01" and data_iso("2019-02-01") == "2019-02-01" and data_iso(None) is None
 

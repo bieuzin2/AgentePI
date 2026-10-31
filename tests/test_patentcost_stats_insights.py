@@ -12,7 +12,7 @@ def banco():
     c.execute("CREATE TABLE despachos (numero_inpi VARCHAR, codigo_despacho VARCHAR, data_rpi DATE, numero_rpi INT, complemento_despacho VARCHAR)")
     for i in range(40):  # seção C: 40 pedidos decididos; metade com 2 exigências
         n = f"C{i}"
-        c.execute("INSERT INTO biblio VALUES (?, DATE '2012-01-01')", [n]); c.execute("INSERT INTO ipc VALUES (?, 'C10G 1/00', 1)", [n])
+        c.execute("INSERT INTO biblio VALUES (?, DATE '2012-01-01')", [n]); c.execute("INSERT INTO ipc VALUES (?, 'C10G 1/00', 0), (?, 'H01L 1/00', 1)", [n, n])
         c.execute("INSERT INTO despachos VALUES (?, '16.1', DATE '2020-01-01', 1, '')", [n])
         if i % 2 == 0:
             c.execute("INSERT INTO despachos VALUES (?, '6.1', DATE '2017-01-01', 2, ''), (?, '6.1', DATE '2018-01-01', 3, '')", [n, n])

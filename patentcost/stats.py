@@ -1,6 +1,6 @@
 """Estatística pública agregada por seção IPC (INPI) no formato patentcost-stats-1.
 
-Universo: pedidos depositados no período COM decisão final publicada (16.1 concessão, 9.2 indeferimento,
+Universo: pedidos depositados no período COM decisão final publicada (16.1/9.1 concessão, 9.2 indeferimento,
 11.x arquivamento) — usar só decididos evita o viés do lag de publicação (pedidos recentes ainda sem exame
 puxariam a média de exigências para baixo). Exigência = despachos 6.1/2.5/7.1 (mesma definição de
 inpi/mercado.py). Saída é agregada e pública: nenhum dado de cliente.
@@ -8,7 +8,7 @@ inpi/mercado.py). Saída é agregada e pública: nenhum dado de cliente.
 from __future__ import annotations
 
 EXIG = ("6.1", "2.5", "7.1")
-DECISAO = ("16.1", "9.2", "11.1", "11.2")
+DECISAO = ("16.1", "9.1", "9.2", "11.1", "11.2")
 
 
 def estatistica_por_secao(de: str, ate: str, con=None) -> list[dict]:
@@ -17,13 +17,14 @@ def estatistica_por_secao(de: str, ate: str, con=None) -> list[dict]:
         con = _con()
     sql = f"""
     WITH base AS (
-      SELECT b.numero_inpi, min(b.data_deposito) dep,
-             upper(substr(any_value(i.simbolo), 1, 1)) secao
-      FROM biblio b JOIN ipc i ON i.numero_inpi = b.numero_inpi AND i.ordem = 1
+      SELECT b.numero_inpi, min(b.data_deposito) dep, upper(substr(any_value(i.simbolo), 1, 1)) secao
+      FROM biblio b JOIN (SELECT numero_inpi, simbolo FROM ipc
+                          QUALIFY row_number() OVER (PARTITION BY numero_inpi ORDER BY ordem) = 1) i ON i.numero_inpi = b.numero_inpi
       WHERE b.data_deposito BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+        AND NOT (b.numero_inpi LIKE 'MI%' OR b.numero_inpi LIKE '3%')
       GROUP BY b.numero_inpi
     ), dec AS (
-      SELECT numero_inpi, min(data_rpi) FILTER (WHERE codigo_despacho = '16.1') conc,
+      SELECT numero_inpi, min(data_rpi) FILTER (WHERE codigo_despacho IN ('16.1', '9.1')) conc,
              count(*) FILTER (WHERE codigo_despacho IN {DECISAO}) ndec,
              count(*) FILTER (WHERE codigo_despacho IN {EXIG}) nexig,
              min(data_rpi) FILTER (WHERE codigo_despacho IN {EXIG}) exig1

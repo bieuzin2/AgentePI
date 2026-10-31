@@ -21,9 +21,13 @@ _CONCESSAO = {"9.1", "16.1"}
 ANOS_PUBLICACAO_VIVA = 5
 
 
-def modalidade_de(numero: str) -> str:
-    n = (numero or "").upper().replace(" ", "")
-    return "MU" if n.startswith("MU") or n.startswith("20") or n.startswith("BR20") else "PI"
+def modalidade_de(numero: str) -> str | None:
+    """Natureza pelo prefixo do número INPI: 10/11/12/13, PI, PP, C1/C2 → PI; 20/21/22, MU → MU;
+    MI e 3x (desenho industrial) → None (não é patente; fica fora da exportação)."""
+    n = (numero or "").upper().replace(" ", "").removeprefix("BR")
+    if n.startswith("MI") or n[:1] == "3":
+        return None
+    return "MU" if n.startswith("MU") or n[:1] == "2" else "PI"
 
 
 def secao_ipc(ipc: str | None) -> str | None:
@@ -70,6 +74,8 @@ def casos_br(chaves: list[str], cliente: str) -> list[dict]:
     dep = {r["numero_inpi"]: r["d"] for r in _linhas("SELECT numero_inpi, string_agg(DISTINCT depositante, '; ') d FROM depositantes WHERE list_contains(?, numero_inpi) GROUP BY 1", [nums])}
     out = []
     for n in nums:
+        if modalidade_de(n) is None:
+            continue
         est = estados.get(n) or {"despachos": [], "encerrado_em": None, "despacho_terminal": None}
         vivos = sorted((d for d in est["despachos"] if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO), key=lambda d: str(d["data_rpi"]))
         b = bib.get(n, {})
