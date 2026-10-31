@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["inpi", "epo", "vigilancia", "busca", "landscape", "enriquecimento", "enriquecimento.fontes"]
+packages = ["inpi", "epo", "vigilancia", "busca", "landscape", "enriquecimento", "enriquecimento.fontes", "patentcost"]
 
 [tool.pytest.ini_options]
 markers = ["online: requer credencial/rede real, nao roda no fluxo padrao"]
