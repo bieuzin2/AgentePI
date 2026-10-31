@@ -66,7 +66,7 @@ def estatisticas(de: str, ate: str, destino: Path) -> dict:
 
     rows = estatistica_por_secao(de, ate)
     corpo = {"format": "patentcost-stats-1", "version": f"BR-{date.today().isoformat()}", "rows": rows,
-             "metodologia": "Pedidos depositados no período com decisão final publicada; exigência = despachos 6.1/2.5/7.1; seção = IPC principal (ordem 1).",
+             "metodologia": "Pedidos depositados no período com decisão final publicada; exigência = despachos 6.1/2.5/7.1; seção = IPC de menor ordem; pedidos MI/3x (desenho industrial) excluídos; concessão = 16.1 ou 9.1.",
              "consulta": date.today().isoformat(), "cobertura": inpi_cobertura()}
     corpo["sha256"] = hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     destino.parent.mkdir(parents=True, exist_ok=True)
