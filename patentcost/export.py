@@ -145,6 +145,12 @@ CAMPOS = ["id_caso", "cliente", "jurisdicao", "modalidade", "tipo_registro", "nu
 def escrever_xlsx(casos: list[dict], modelo: Path, saida: Path) -> Path:
     """Preenche a aba Casos do modelo oficial do PatentCost (cabeçalho = chaves dos campos)."""
     wb = load_workbook(modelo)
+    # Comentários de ajuda do modelo regravados pelo openpyxl quebram o leitor ExcelJS do PatentCost
+    # (teste de contrato tests/agentepi-contract.test.ts): o arquivo de dados sai sem eles.
+    for sheet in wb.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                cell.comment = None
     ws = wb["Casos"]
     cab = [c.value for c in ws[1]]
     col = {k: cab.index(k) + 1 for k in CAMPOS if k in cab}
