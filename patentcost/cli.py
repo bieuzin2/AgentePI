@@ -28,13 +28,14 @@ def _ler_extracao(arq: Path) -> list[dict]:
     return [dict(zip(cab, [str(v).strip() if v is not None else None for v in r])) for r in linhas[1:] if any(r)]
 
 
-def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = None, sem_familia: bool = False) -> dict:
+def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = None, sem_familia: bool = False, chaves: list[str] | None = None) -> dict:
     from inpi.consulta import inpi_cobertura, inpi_titular_resolver
 
     res = inpi_titular_resolver(titular)
-    chaves = [c["chave"] for c in res["chaves_encontradas"]]
+    encontradas = [c["chave"] for c in res["chaves_encontradas"]]
+    chaves = chaves or encontradas
     br = casos_br(chaves, cliente)
-    ext = [] if sem_familia else casos_familia(br)
+    ext, rel_fam = ([], {}) if sem_familia else casos_familia(br)
     casos = br + ext
     cob = inpi_cobertura()
     lacunas = ["Titularidade pública não comprova pagamento de anuidades nem quem gere o caso.",
@@ -42,13 +43,17 @@ def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = No
                "Pedidos depositados há menos de 18 meses podem estar em sigilo e não aparecer."]
     if sem_familia:
         lacunas.append("Família EPO não consultada nesta execução (--sem-familia).")
+    elif rel_fam.get("antigos_nao_concedidos"):
+        lacunas.append(f"{rel_fam['antigos_nao_concedidos']} membros estrangeiros não concedidos com publicação antiga ficaram fora (status desconhecido sem status legal do OPS).")
+    if chaves == encontradas:
+        lacunas.append("Chaves do titular não confirmadas pelo usuário: todas as encontradas pelo nome foram usadas (ver lacunas.json, resolucao_titular).")
     saida.mkdir(parents=True, exist_ok=True)
     escrever_xlsx(casos, PATENTCOST / "dist" / "PatentCost_Modelo_Entrada.xlsx", saida / f"PatentCost_Entrada_{cliente}.xlsx")
     fontes = [{"name": "INPI dados abertos", "coverage": f"última RPI {cob.get('ultima_rpi') or cob.get('rpi_mais_recente') or '?'}; chaves {', '.join(chaves)}"},
               {"name": "EPO OPS (família INPADOC)", "coverage": "não consultado" if sem_familia else f"{len(ext)} membros estrangeiros"}]
     (saida / "insights.json").write_text(json.dumps(montar_insights(casos, cliente, fontes, lacunas), ensure_ascii=False, indent=1), encoding="utf-8")
     (saida / "lacunas.json").write_text(json.dumps({"lacunas": lacunas, "resolucao_titular": res}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
-    resumo = {"casos_br": len(br), "casos_exterior": len(ext), "chaves": chaves}
+    resumo = {"casos_br": len(br), "casos_exterior": len(ext), "chaves": chaves, "familia": rel_fam}
     if extracao:
         conc = conciliar(casos, _ler_extracao(extracao))
         (saida / "conciliacao.json").write_text(json.dumps(conc, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -75,11 +80,12 @@ def main(argv=None):
     e = sub.add_parser("exportar")
     e.add_argument("--titular", required=True); e.add_argument("--cliente", required=True); e.add_argument("--saida", required=True, type=Path)
     e.add_argument("--extracao-cliente", type=Path); e.add_argument("--sem-familia", action="store_true")
+    e.add_argument("--chaves", nargs="*", help="chaves canônicas confirmadas (ex.: CNPJ:33000167); padrão: todas as encontradas pelo nome")
     s = sub.add_parser("estatisticas")
     s.add_argument("--de", default="2008-01-01"); s.add_argument("--ate", default="2016-12-31")
     s.add_argument("--destino", type=Path, default=PATENTCOST / "research" / "stats" / "BR.json")
     a = ap.parse_args(argv)
-    r = exportar(a.titular, a.cliente, a.saida, a.extracao_cliente, a.sem_familia) if a.cmd == "exportar" else estatisticas(a.de, a.ate, a.destino)
+    r = exportar(a.titular, a.cliente, a.saida, a.extracao_cliente, a.sem_familia, a.chaves) if a.cmd == "exportar" else estatisticas(a.de, a.ate, a.destino)
     print(json.dumps(r, ensure_ascii=False, indent=1))
 
 

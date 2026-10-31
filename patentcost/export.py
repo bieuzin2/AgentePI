@@ -12,10 +12,13 @@ from openpyxl import load_workbook
 
 from inpi.familia_epo import familia
 
-# Desfechos que encerram o caso (dados abertos do INPI). 21.6 = notificação de anuidade não paga/extinção,
-# sujeita a anulação posterior (21.8) — tratada por _anulados().
-FIM = {"11.1": "abandonada", "11.2": "abandonada", "9.2": "abandonada", "21.6": "extinta", "24.1": "extinta", "24.2": "extinta"}
-_RE_ANULA = re.compile(r"[Aa]nulad[ao] a publica\S* c[oó]digo\s*(\d+\.\d+)\s*na RPI\s*(\d+)")
+# Status reaproveita a classificação do próprio AgentePI (códigos terminais com reversões e anulações 21.8),
+# calibrada contra a base real: inpi.prazos._estado_de + inpi.panorama_carteira._classifica.
+_MAPA = {"concedida_vigente": "concedida", "em_andamento": "pendente", "extinta": "extinta", "indeferida": "abandonada", "arquivada": "abandonada"}
+_CONCESSAO = {"9.1", "16.1"}
+# Membro estrangeiro não concedido cuja última publicação é mais antiga que isto fica fora da planilha
+# (status desconhecido sem o status legal do OPS) e entra como lacuna.
+ANOS_PUBLICACAO_VIVA = 5
 
 
 def modalidade_de(numero: str) -> str:
@@ -35,77 +38,104 @@ def data_iso(v: str | None) -> str | None:
     return s[:10] if re.match(r"\d{4}-\d{2}-\d{2}", s) else None
 
 
-def _anulados(despachos: list[dict]) -> set[tuple[str, int]]:
-    out = set()
-    for d in despachos:
-        m = _RE_ANULA.search(d.get("complemento_despacho") or "")
-        if m:
-            out.add((m.group(1), int(m.group(2))))
-    return out
+def classificar_status(numero: str, despachos: list[dict], data_deposito=None) -> tuple[str, str | None]:
+    """(status PatentCost, data de concessão) pelo estado do AgentePI; despachos anulados não contam."""
+    from inpi.panorama_carteira import _classifica
+    from inpi.prazos import _estado_de
 
-
-def classificar_status(despachos: list[dict]) -> tuple[str, str | None]:
-    anul = _anulados(despachos)
-    ds = sorted((d for d in despachos if (str(d["codigo_despacho"]), int(d.get("numero_rpi") or 0)) not in anul and str(d["codigo_despacho"]) != "21.8"),
-                key=lambda d: str(d["data_rpi"]))
-    concessao = next((data_iso(str(d["data_rpi"])) for d in ds if str(d["codigo_despacho"]) == "16.1"), None)
-    status = "concedida" if concessao else "pendente"
-    for d in ds:
-        if str(d["codigo_despacho"]) in FIM:
-            status = FIM[str(d["codigo_despacho"])]
-    return status, concessao
+    est = _estado_de(numero, [dict(d) for d in despachos], data_deposito)
+    vivos = sorted((d for d in est["despachos"] if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO), key=lambda d: str(d["data_rpi"]))
+    return _MAPA[_classifica(est)], (data_iso(str(vivos[0]["data_rpi"])) if vivos else None)
 
 
 OBS = "Portfólio público provável; titularidade não prova pagamento nem gestão do caso."
 
 
 def casos_br(chaves: list[str], cliente: str) -> list[dict]:
-    """Casos BR de todas as chaves canônicas do titular (inpi_titular_resolver). Consulta a base do INPI."""
+    """Casos BR de todas as chaves canônicas confirmadas do titular. Consulta a base do INPI (local ou MotherDuck)."""
     from inpi.consulta import _linhas
+    from inpi.panorama_carteira import _classifica
+    from inpi.prazos import _carregar_lote
 
     nums = [r["numero_inpi"] for r in _linhas(
         "SELECT DISTINCT dp.numero_inpi FROM depositantes dp JOIN titulares t ON t.original = dp.depositante WHERE list_contains(?, t.chave)", [chaves])]
+    estados, _ = _carregar_lote(numeros=nums)
+    bib = {r["numero_inpi"]: r for r in _linhas(
+        """SELECT b.numero_inpi, min(b.data_deposito) dep, any_value(b.numero_pct) pct FROM biblio b
+           WHERE list_contains(?, b.numero_inpi) GROUP BY 1""", [nums])}
+    ipc = {r["numero_inpi"]: r["simbolo"] for r in _linhas(
+        """SELECT numero_inpi, simbolo FROM ipc WHERE list_contains(?, numero_inpi)
+           QUALIFY row_number() OVER (PARTITION BY numero_inpi ORDER BY ordem) = 1""", [nums])}
+    tit = {r["numero_inpi"]: r["titulo"] for r in _linhas("SELECT numero_inpi, any_value(titulo) titulo FROM conteudo WHERE list_contains(?, numero_inpi) GROUP BY 1", [nums])}
+    dep = {r["numero_inpi"]: r["d"] for r in _linhas("SELECT numero_inpi, string_agg(DISTINCT depositante, '; ') d FROM depositantes WHERE list_contains(?, numero_inpi) GROUP BY 1", [nums])}
     out = []
     for n in nums:
-        b = (_linhas("""SELECT * FROM biblio WHERE numero_inpi = ? ORDER BY (data_protocolo IS NOT NULL)::INT + (data_publicacao IS NOT NULL)::INT
-                        + (numero_pct IS NOT NULL)::INT DESC LIMIT 1""", [n]) or [{}])[0]
-        desp = _linhas("SELECT codigo_despacho, CAST(data_rpi AS VARCHAR) data_rpi, numero_rpi, complemento_despacho FROM despachos WHERE numero_inpi = ?", [n])
-        ipc = (_linhas("SELECT simbolo FROM ipc WHERE numero_inpi = ? ORDER BY ordem LIMIT 1", [n]) or [{}])[0].get("simbolo")
-        tit = (_linhas("SELECT titulo FROM conteudo WHERE numero_inpi = ?", [n]) or [{}])[0].get("titulo")
-        dep = (_linhas("SELECT string_agg(DISTINCT depositante, '; ') d FROM depositantes WHERE numero_inpi = ?", [n]) or [{}])[0].get("d")
-        status, conc = classificar_status(desp)
+        est = estados.get(n) or {"despachos": [], "encerrado_em": None, "despacho_terminal": None}
+        vivos = sorted((d for d in est["despachos"] if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO), key=lambda d: str(d["data_rpi"]))
+        b = bib.get(n, {})
         out.append({
             "id_caso": f"BR-{n}", "cliente": cliente, "jurisdicao": "BR", "modalidade": modalidade_de(n), "tipo_registro": "existente",
-            "numero_pedido": n, "titulo": tit, "titular": dep, "rota": "pct_fase_nacional" if b.get("numero_pct") else "direta",
-            "status": status, "data_deposito": data_iso(str(b.get("data_deposito") or "")), "data_concessao": conc,
-            "ipc_cpc": ipc, "categoria_tecnologica": secao_ipc(ipc), "categoria_requerente": "grande", "familia": n,
-            "fonte": "INPI dados abertos", "confianca": "confirmado" if b.get("data_deposito") else "inferido", "observacoes": OBS,
+            "numero_pedido": n, "titulo": tit.get(n), "titular": dep.get(n), "rota": "pct_fase_nacional" if b.get("pct") else "direta",
+            "status": _MAPA[_classifica(est)], "data_deposito": data_iso(str(b.get("dep") or "")), "data_concessao": data_iso(str(vivos[0]["data_rpi"])) if vivos else None,
+            "ipc_cpc": ipc.get(n), "categoria_tecnologica": secao_ipc(ipc.get(n)), "categoria_requerente": "grande", "familia": n,
+            "fonte": "INPI dados abertos", "confianca": "confirmado" if b.get("dep") else "inferido", "observacoes": OBS,
         })
     return out
 
 
-def casos_familia(casos: list[dict]) -> list[dict]:
-    """Membros estrangeiros da família INPADOC (EPO OPS, cacheado em disco) como casos inferidos."""
-    out, vistos = [], set()
+def casos_familia(casos: list[dict], hoje: str | None = None) -> tuple[list[dict], dict]:
+    """Membros estrangeiros da família INPADOC (EPO OPS, cacheado em disco) como casos inferidos.
+
+    Agrupa pela família INPADOC (familia_id), deduplica membros por (país, nº do pedido) mantendo a publicação
+    concedida, ignora WO (fase internacional) e deixa fora os não concedidos com publicação antiga.
+    Devolve (casos, relatório)."""
+    from datetime import date
+
+    limite = int((hoje or date.today().isoformat())[:4]) - ANOS_PUBLICACAO_VIVA
+    melhor: dict[tuple[str, str], dict] = {}
+    rel = {"familias_consultadas": 0, "sem_familia": 0, "wo_ignorados": 0, "antigos_nao_concedidos": 0, "duplicados": 0}
     for c in casos:
         fam = familia(c["numero_pedido"])
-        for m in fam.get("membros", []):
-            pais, num = m.get("pais"), m.get("numero")
-            if not pais or not num or pais == "BR" or (pais, num) in vistos:
+        rel["familias_consultadas"] += 1
+        if fam.get("erro") or not fam.get("membros"):
+            rel["sem_familia"] += 1
+            continue
+        fid = str(fam.get("familia_id") or c["familia"])
+        c["familia"] = fid
+        for m in fam["membros"]:
+            pais, pub = m.get("pais"), m.get("numero")
+            if not pais or not pub or pais == "BR":
                 continue
-            vistos.add((pais, num))
-            grant = data_iso(m.get("data_publicacao")) if m.get("concedida") else None
-            out.append({
-                "id_caso": f"{pais}-{num}", "cliente": c["cliente"], "jurisdicao": pais, "modalidade": c.get("modalidade", "PI"),
-                "tipo_registro": "existente", "numero_pedido": m.get("numero_pedido") or num, "numero_patente": num if grant else None,
-                "titulo": m.get("titulo") or c.get("titulo"), "status": "concedida" if grant else "pendente",
-                "data_deposito": data_iso(m.get("data_deposito")), "data_concessao": grant, "ipc_cpc": c.get("ipc_cpc"),
-                "categoria_tecnologica": c.get("categoria_tecnologica"), "categoria_requerente": "grande", "familia": c["familia"],
-                "rota": "regional" if pais in ("EP", "EA", "AP", "OA") else "pct_fase_nacional" if c.get("rota") == "pct_fase_nacional" else "direta",
-                "fonte": "EPO OPS INPADOC", "confianca": "inferido",
-                "observacoes": OBS + " Status inferido pelo kind code da última publicação; validações EP e anuidades pagas não verificadas.",
-            })
-    return out
+            if pais == "WO":
+                rel["wo_ignorados"] += 1
+                continue
+            pedido = m.get("numero_pedido") or pub
+            k = (pais, pedido)
+            atual = melhor.get(k)
+            if atual is not None:
+                rel["duplicados"] += 1
+                if atual["_concedida"] or not m.get("concedida"):
+                    continue
+            melhor[k] = {**m, "_concedida": bool(m.get("concedida")), "_caso": c, "_fid": fid}
+    out = []
+    for (pais, pedido), m in melhor.items():
+        c = m["_caso"]
+        grant = data_iso(m.get("data_publicacao")) if m["_concedida"] else None
+        pub = data_iso(m.get("data_publicacao"))
+        if not grant and (not pub or int(pub[:4]) < limite):
+            rel["antigos_nao_concedidos"] += 1
+            continue
+        out.append({
+            "id_caso": f"{pais}-{pedido}", "cliente": c["cliente"], "jurisdicao": pais, "modalidade": c.get("modalidade", "PI"),
+            "tipo_registro": "existente", "numero_pedido": pedido, "numero_patente": m.get("numero") if grant else None,
+            "titulo": m.get("titulo") or c.get("titulo"), "status": "concedida" if grant else "pendente",
+            "data_deposito": data_iso(m.get("data_deposito")), "data_concessao": grant, "ipc_cpc": c.get("ipc_cpc"),
+            "categoria_tecnologica": c.get("categoria_tecnologica"), "categoria_requerente": "grande", "familia": m["_fid"],
+            "rota": "regional" if pais in ("EP", "EA", "AP", "OA") else "pct_fase_nacional" if c.get("rota") == "pct_fase_nacional" else "direta",
+            "fonte": "EPO OPS INPADOC", "confianca": "inferido",
+            "observacoes": OBS + " Status inferido pelo kind code da publicação; validações EP e anuidades pagas não verificadas.",
+        })
+    return out, rel
 
 
 CAMPOS = ["id_caso", "cliente", "jurisdicao", "modalidade", "tipo_registro", "numero_pedido", "numero_patente", "familia", "titulo", "titular",

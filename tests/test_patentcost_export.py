@@ -1,4 +1,4 @@
-"""Exportador PatentCost — funções puras (sem banco nem rede; dados sintéticos)."""
+"""Exportador PatentCost — funções puras e classificação do AgentePI (sem banco nem rede; dados sintéticos)."""
 from pathlib import Path
 
 import pytest
@@ -13,14 +13,19 @@ def d(codigo, data, rpi, compl=""):
     return {"codigo_despacho": codigo, "data_rpi": data, "numero_rpi": rpi, "complemento_despacho": compl}
 
 
-def test_status_concessao_extincao_e_anulacao():
+def test_status_pela_classificacao_do_agentepi():
     conc = [d("16.1", "2018-06-15", 2475)]
-    assert classificar_status(conc) == ("concedida", "2018-06-15")
-    assert classificar_status(conc + [d("21.6", "2026-07-14", 2897)])[0] == "extinta"
-    anulado = conc + [d("21.6", "2026-07-14", 2897), d("21.8", "2026-07-21", 2898, "Anulada a publicação código 21.6 na RPI 2897 de 14/07/2026")]
-    assert classificar_status(anulado)[0] == "concedida"
-    assert classificar_status([d("11.2", "2019-01-01", 2500)])[0] == "abandonada"
-    assert classificar_status([]) == ("pendente", None)
+    assert classificar_status("X", conc) == ("concedida", "2018-06-15")
+    assert classificar_status("X", [d("9.1", "2018-07-01", 2477)]) == ("concedida", "2018-07-01")  # carta-patente
+    # 21.6 é terminal (extinção por anuidade) ...
+    assert classificar_status("X", conc + [d("21.6", "2026-07-14", 2897)])[0] == "extinta"
+    # ... mas a anulação publicada depois o desfaz (caso PI0803071 documentado no AgentePI)
+    anul = conc + [d("21.6", "2026-07-14", 2897), d("21.8", "2026-07-21", 2898, "Anulada a publicação código 21.6 na RPI 2897 de 14/07/2026")]
+    assert classificar_status("X", anul)[0] == "concedida"
+    # indeferimento revertido por recurso provido não fica encerrado
+    assert classificar_status("X", [d("9.2", "2019-01-01", 2500), d("100", "2023-01-01", 2700)])[0] == "pendente"
+    assert classificar_status("X", [d("11.2", "2019-01-01", 2500)])[0] == "abandonada"
+    assert classificar_status("X", []) == ("pendente", None)
 
 
 def test_modalidade_secao_e_data():
@@ -30,21 +35,26 @@ def test_modalidade_secao_e_data():
     assert data_iso("20190201") == "2019-02-01" and data_iso("2019-02-01") == "2019-02-01" and data_iso(None) is None
 
 
-FAM = {"membros": [
+FAM = {"familia_id": "55555", "membros": [
     {"pais": "BR", "numero": "102019000001", "kind": "A2", "data_deposito": "20190201", "data_publicacao": "20200801", "concedida": False},
-    {"pais": "US", "numero": "11223344", "kind": "B2", "data_deposito": "20190201", "data_publicacao": "20220510", "concedida": True},
-    {"pais": "EP", "numero": "3999999", "kind": "A1", "data_deposito": "20190201", "data_publicacao": "20201010", "concedida": False},
-    {"pais": "US", "numero": "11223344", "kind": "B2", "data_deposito": "20190201", "data_publicacao": "20220510", "concedida": True},
+    {"pais": "US", "numero": "2021001", "numero_pedido": "16999999", "kind": "A1", "data_deposito": "20190201", "data_publicacao": "20210110", "concedida": False},
+    {"pais": "US", "numero": "11223344", "numero_pedido": "16999999", "kind": "B2", "data_deposito": "20190201", "data_publicacao": "20220510", "concedida": True},
+    {"pais": "EP", "numero": "3999999", "numero_pedido": "19900001", "kind": "A1", "data_deposito": "20190201", "data_publicacao": "20241010", "concedida": False},
+    {"pais": "CN", "numero": "1000", "numero_pedido": "2019800001", "kind": "A", "data_deposito": "20190201", "data_publicacao": "20150101", "concedida": False},
+    {"pais": "WO", "numero": "2020123", "kind": "A1", "data_deposito": "20190201", "data_publicacao": "20200801", "concedida": False},
 ]}
 
 
 def test_familia_vira_casos_inferidos(monkeypatch):
     monkeypatch.setattr("patentcost.export.familia", lambda n: FAM)
-    out = casos_familia([{"id_caso": "BR-102019000001", "numero_pedido": "102019000001", "cliente": "SINT", "modalidade": "PI",
-                          "familia": "102019000001", "categoria_tecnologica": "C", "ipc_cpc": "C10G 1/00"}])
-    assert sorted(c["jurisdicao"] for c in out) == ["EP", "US"]  # BR e duplicado fora
+    base = [{"id_caso": "BR-102019000001", "numero_pedido": "102019000001", "cliente": "SINT", "modalidade": "PI",
+             "familia": "102019000001", "categoria_tecnologica": "C", "ipc_cpc": "C10G 1/00"}]
+    out, rel = casos_familia(base, hoje="2026-10-31")
+    assert sorted(c["jurisdicao"] for c in out) == ["EP", "US"]  # BR, WO e CN antigo não concedido fora; US A1+B2 = um caso
     us = next(c for c in out if c["jurisdicao"] == "US")
-    assert (us["status"], us["data_concessao"], us["data_deposito"], us["confianca"], us["familia"]) == ("concedida", "2022-05-10", "2019-02-01", "inferido", "102019000001")
+    assert (us["status"], us["data_concessao"], us["numero_pedido"], us["confianca"], us["familia"]) == ("concedida", "2022-05-10", "16999999", "inferido", "55555")
+    assert base[0]["familia"] == "55555"  # caso BR passa a usar o id INPADOC
+    assert (rel["wo_ignorados"], rel["antigos_nao_concedidos"], rel["duplicados"]) == (1, 1, 1)
 
 
 def test_xlsx_no_contrato(tmp_path):
