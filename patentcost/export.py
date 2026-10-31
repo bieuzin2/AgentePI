@@ -82,7 +82,8 @@ def casos_br(chaves: list[str], cliente: str) -> list[dict]:
         out.append({
             "id_caso": f"BR-{n}", "cliente": cliente, "jurisdicao": "BR", "modalidade": modalidade_de(n), "tipo_registro": "existente",
             "numero_pedido": n, "titulo": tit.get(n), "titular": dep.get(n), "rota": "pct_fase_nacional" if b.get("pct") else "direta",
-            "status": _MAPA[_classifica(est)], "data_deposito": data_iso(str(b.get("dep") or "")), "data_concessao": data_iso(str(vivos[0]["data_rpi"])) if vivos else None,
+            "status": _MAPA[_classifica(est)], "data_status": data_iso(str(est.get("encerrado_em") or "")),
+            "data_deposito": data_iso(str(b.get("dep") or "")), "data_concessao": data_iso(str(vivos[0]["data_rpi"])) if vivos else None,
             "ipc_cpc": ipc.get(n), "categoria_tecnologica": secao_ipc(ipc.get(n)), "categoria_requerente": "grande", "familia": n,
             "fonte": "INPI dados abertos", "confianca": "confirmado" if b.get("dep") else "inferido", "observacoes": OBS,
         })
@@ -145,7 +146,7 @@ def casos_familia(casos: list[dict], hoje: str | None = None) -> tuple[list[dict
 
 
 CAMPOS = ["id_caso", "cliente", "jurisdicao", "modalidade", "tipo_registro", "numero_pedido", "numero_patente", "familia", "titulo", "titular",
-          "rota", "status", "data_deposito", "data_concessao", "ipc_cpc", "categoria_tecnologica", "categoria_requerente", "observacoes"]
+          "rota", "status", "data_status", "data_deposito", "data_concessao", "ipc_cpc", "categoria_tecnologica", "categoria_requerente", "observacoes"]
 
 
 def escrever_xlsx(casos: list[dict], modelo: Path, saida: Path) -> Path:

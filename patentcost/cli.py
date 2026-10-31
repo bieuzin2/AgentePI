@@ -40,7 +40,8 @@ def exportar(titular: str, cliente: str, saida: Path, extracao: Path | None = No
     cob = inpi_cobertura()
     lacunas = ["Titularidade pública não comprova pagamento de anuidades nem quem gere o caso.",
                "Membros estrangeiros vêm da família INPADOC (EPO OPS): status inferido pelo kind code; validações EP não conferidas.",
-               "Pedidos depositados há menos de 18 meses podem estar em sigilo e não aparecer."]
+               "Pedidos depositados há menos de 18 meses podem estar em sigilo e não aparecer.",
+               "Nº de reivindicações não consta dos dados abertos do INPI: taxas que dependem dele (exame BR) ficam pendentes; informe a premissa reivindicacoes_padrao no PatentCost para estimá-las."]
     if sem_familia:
         lacunas.append("Família EPO não consultada nesta execução (--sem-familia).")
     elif rel_fam.get("antigos_nao_concedidos"):
