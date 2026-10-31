@@ -16,6 +16,16 @@ from inpi.familia_epo import familia
 # calibrada contra a base real: inpi.prazos._estado_de + inpi.panorama_carteira._classifica.
 _MAPA = {"concedida_vigente": "concedida", "em_andamento": "pendente", "extinta": "extinta", "indeferida": "abandonada", "arquivada": "abandonada"}
 _CONCESSAO = {"9.1", "16.1"}
+
+
+def data_concessao(despachos: list[dict]) -> str | None:
+    """Concessão = expedição da carta-patente (16.1, LPI art. 38); deferimento (9.1) só se a 16.1 ainda não saiu."""
+    vivos = [d for d in despachos if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO]
+    for cod in ("16.1", "9.1"):
+        datas = sorted(str(d["data_rpi"]) for d in vivos if str(d.get("codigo_despacho")) == cod)
+        if datas:
+            return data_iso(datas[0])
+    return None
 # Membro estrangeiro não concedido cuja última publicação é mais antiga que isto fica fora da planilha
 # (status desconhecido sem o status legal do OPS) e entra como lacuna.
 ANOS_PUBLICACAO_VIVA = 5
@@ -48,8 +58,7 @@ def classificar_status(numero: str, despachos: list[dict], data_deposito=None) -
     from inpi.prazos import _estado_de
 
     est = _estado_de(numero, [dict(d) for d in despachos], data_deposito)
-    vivos = sorted((d for d in est["despachos"] if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO), key=lambda d: str(d["data_rpi"]))
-    return _MAPA[_classifica(est)], (data_iso(str(vivos[0]["data_rpi"])) if vivos else None)
+    return _MAPA[_classifica(est)], data_concessao(est["despachos"])
 
 
 OBS = "Portfólio público provável; titularidade não prova pagamento nem gestão do caso."
@@ -77,13 +86,12 @@ def casos_br(chaves: list[str], cliente: str) -> list[dict]:
         if modalidade_de(n) is None:
             continue
         est = estados.get(n) or {"despachos": [], "encerrado_em": None, "despacho_terminal": None}
-        vivos = sorted((d for d in est["despachos"] if not d.get("anulado_em") and str(d.get("codigo_despacho")) in _CONCESSAO), key=lambda d: str(d["data_rpi"]))
         b = bib.get(n, {})
         out.append({
             "id_caso": f"BR-{n}", "cliente": cliente, "jurisdicao": "BR", "modalidade": modalidade_de(n), "tipo_registro": "existente",
             "numero_pedido": n, "titulo": tit.get(n), "titular": dep.get(n), "rota": "pct_fase_nacional" if b.get("pct") else "direta",
             "status": _MAPA[_classifica(est)], "data_status": data_iso(str(est.get("encerrado_em") or "")),
-            "data_deposito": data_iso(str(b.get("dep") or "")), "data_concessao": data_iso(str(vivos[0]["data_rpi"])) if vivos else None,
+            "data_deposito": data_iso(str(b.get("dep") or "")), "data_concessao": data_concessao(est["despachos"]),
             "ipc_cpc": ipc.get(n), "categoria_tecnologica": secao_ipc(ipc.get(n)), "categoria_requerente": "grande", "familia": n,
             "fonte": "INPI dados abertos", "confianca": "confirmado" if b.get("dep") else "inferido", "observacoes": OBS,
         })

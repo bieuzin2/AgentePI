@@ -75,3 +75,12 @@ def test_conciliacao():
     r = conciliar([{"numero_pedido": "A", "status": "concedida"}], [{"numero_pedido": "A", "status": "extinta"}, {"numero_pedido": "B"}])
     assert r["apenas_cliente"] == ["B"] and r["apenas_publico"] == []
     assert r["divergencias"] == [{"numero_pedido": "A", "campo": "status", "publico": "concedida", "cliente": "extinta"}]
+
+
+def test_data_concessao_prefere_carta_patente():
+    from patentcost.export import data_concessao
+    d = [{"codigo_despacho": "9.1", "data_rpi": "2020-03-03"}, {"codigo_despacho": "16.1", "data_rpi": "2020-05-12"}]
+    assert data_concessao(d) == "2020-05-12"
+    assert data_concessao(d[:1]) == "2020-03-03"
+    assert data_concessao([{**d[1], "anulado_em": "2021-01-01"}, d[0]]) == "2020-03-03"
+    assert data_concessao([]) is None
